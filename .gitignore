@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+uploads/
+static/audio/
+logs.csv
+.env
+.env.txt

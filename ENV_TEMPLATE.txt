@@ -1,0 +1,30 @@
+# AI Crop Disease Detection & Advisory Agent - Environment Variables Template
+# Copy this content to a file named .env in the project root and fill in your actual API keys
+
+# GROQ API Key (Optional - used as fallback for advice generation and translation)
+# Get your key from: https://console.groq.com/
+GROQ_API_KEY=your_groq_key_here
+
+# Google API Key (Recommended - for Google Cloud Translation API)
+# Get your key from: https://console.cloud.google.com/apis/credentials
+# Enable "Cloud Translation API" in Google Cloud Console
+# Note: This provides more reliable translation than the free service
+GOOGLE_API_KEY=your_google_key_here
+
+# Hugging Face API Key (Required for disease detection via image classification)
+# Get your token from: https://huggingface.co/settings/tokens
+HUGGINGFACE_API_KEY=your_hf_token_here
+
+# Hugging Face Model (Optional - defaults to akhaliq/plant-disease-classification)
+# You can use: akhaliq/plant-disease-classification, MDV23/plant-disease-detection, microsoft/resnet-50
+HUGGINGFACE_MODEL=akhaliq/plant-disease-classification
+
+# OpenWeatherMap API Key (Required for weather data)
+# Get your key from: https://openweathermap.org/api
+OPENWEATHER_API_KEY=your_openweather_key_here
+
+# Optional: Port for Flask app (defaults to 3000)
+# PORT=3000
+
+# Note: Google Translate (googletrans) is used for translation and doesn't require an API key
+

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>AI Crop Doctor | Smart Diagnosis</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Link to the new CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <!-- Background is handled by CSS -->
+
+  <div class="container">
+    <div class="card" id="mainCard">
+      <h1>🌱 AI Crop Doctor</h1>
+      <p class="hint">
+        Your intelligent assistant for crop health. Upload a leaf image below. <br>
+        Optionally, add a voice note with language, location, and soil details.
+      </p>
+
+      <form id="mainForm" action="/analyze" method="post" enctype="multipart/form-data">
+
+        <label>Upload Leaf Image <span style="color:var(--primary-green)">*</span></label>
+        <input type="file" name="image" accept="image/*" required />
+
+        <div style="margin-top: 25px; border-top: 1px solid #eee; padding-top: 20px;">
+          <p class="hint" style="margin-bottom: 15px;">Enter details (type or speak 🎤):</p>
+
+          <label>Location</label>
+          <div class="input-wrapper">
+            <input type="text" id="location" name="location" placeholder="e.g., Hyderabad" />
+            <button type="button" class="btn-mic" onclick="startDictation('location', this)"
+              title="Tap to speak">🎤</button>
+          </div>
+
+          <label>Soil Type</label>
+          <div class="input-wrapper">
+            <input type="text" id="soil_type" name="soil_type" placeholder="e.g., Loam, Sandy, Clay" />
+            <button type="button" class="btn-mic" onclick="startDictation('soil_type', this)"
+              title="Tap to speak">🎤</button>
+          </div>
+
+          <label>Preferred Language</label>
+          <div class="input-wrapper">
+            <input list="languages" type="text" id="language" name="language" placeholder="Select or type language">
+            <button type="button" class="btn-mic" onclick="startDictation('language', this)"
+              title="Tap to speak">🎤</button>
+          </div>
+          <datalist id="languages">
+            <option value="English">
+            <option value="Hindi">
+            <option value="Telugu">
+            <option value="Tamil">
+            <option value="Kannada">
+            <option value="Marathi">
+            <option value="Bengali">
+            <option value="Gujarati">
+            <option value="Punjabi">
+            <option value="Urdu">
+            <option value="Malayalam">
+            <option value="Odia">
+            <option value="Assamese">
+            <option value="Nepali">
+            <option value="Sinhala">
+            <option value="Spanish">
+            <option value="French">
+            <option value="German">
+            <option value="Arabic">
+            <option value="Chinese">
+            <option value="Japanese">
+            <option value="Korean">
+            <option value="Russian">
+          </datalist>
+        </div>
+
+        <button type="submit" id="submitBtn" class="btn-primary">Analyze Crop Health</button>
+      </form>
+
+      <p class="hint" style="margin-top:20px; font-size:0.8rem">
+        Tip: Providing accurate location and soil data helps improve the diagnosis accuracy.
+      </p>
+    </div>
+  </div>
+
+  </div>
+  </div>
+
+  <!-- Enhanced Loading Overlay -->
+  <div class="overlay" id="loadingOverlay">
+    <div class="spinner-container">
+      <div class="spinner"></div>
+      <div class="leaf-icon">🌿</div>
+    </div>
+    <div class="processing-text">Analyzing Crops...</div>
+    <div class="processing-subtext">Optimizing yield & detecting issues</div>
+  </div>
+
+  <script>
+    const form = document.querySelector('form');
+    const overlay = document.getElementById('loadingOverlay');
+    const fileInput = document.querySelector('input[name="image"]');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Form Submit - Show Overlay
+    form.addEventListener('submit', function () {
+      // Show overlay
+      overlay.style.display = 'flex';
+      overlay.offsetHeight; // Force reflow
+      overlay.classList.add('active');
+
+      // Update Button State
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerText = 'Processing...';
+      }
+
+      // Update text dynamically to keep user engaged
+      const texts = [
+        "Analyzing Crops...",
+        "Detecting Diseases...",
+        "Consulting AI Agronomist...",
+        "Generating Advice...",
+        "Translating Results..."
+      ];
+
+      let i = 0;
+      setInterval(() => {
+        i = (i + 1) % texts.length;
+        const textEl = document.querySelector('.processing-text');
+        if (textEl) textEl.textContent = texts[i];
+      }, 3000);
+    });
+
+    // Hide overlay when page is shown via back/forward cache
+    window.addEventListener('pageshow', function (event) {
+      if (event.persisted) {
+        overlay.classList.remove('active');
+        setTimeout(() => { overlay.style.display = 'none'; }, 300);
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerText = 'Analyze Crop Health';
+        }
+      }
+    });
+
+    // Speech to Text
+    function startDictation(inputId, btn) {
+      if (window.hasOwnProperty('webkitSpeechRecognition') || window.hasOwnProperty('SpeechRecognition')) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        var recognition = new SpeechRecognition();
+
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-US";
+
+        btn.classList.add('listening');
+
+        recognition.start();
+
+        recognition.onresult = function (e) {
+          document.getElementById(inputId).value = e.results[0][0].transcript;
+          recognition.stop();
+          btn.classList.remove('listening');
+        };
+
+        recognition.onerror = function (e) {
+          recognition.stop();
+          btn.classList.remove('listening');
+          console.error("Speech recognition error", e);
+          // Quiet failure is better for UI, but logging is good. 
+          // Alert only if persistent issues, but user asked for functionality.
+        }
+
+        recognition.onend = function () {
+          btn.classList.remove('listening');
+        }
+      } else {
+        alert("Web Speech API not supported in this browser. Please use Chrome, Edge, or Safari.");
+      }
+    }
+  </script>
+</body>
+
+</html>

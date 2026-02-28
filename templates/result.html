@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>Analysis Result | AI Crop Doctor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Link to the new CSS -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <div style="width: 100%; padding: 40px; max-width: 1400px; margin: 0 auto;">
+
+    <div class="result-container">
+      <!-- Sidebar: Image & Stats -->
+      <div class="result-sidebar">
+        <div class="result-image-container">
+          <img src="{{ image_path }}" alt="uploaded leaf" class="result-image" />
+        </div>
+
+        <div class="info-grid">
+          <div class="info-box">
+            <div class="info-label">Detected Disease</div>
+            <div class="info-value">{{ result.disease }}</div>
+            <div style="font-size:0.8rem; color:#666; margin-top:2px;">Confidence: {{ result.confidence }}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">Language</div>
+            <div class="info-value">{{ result.fields.language or "English" }}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">Location</div>
+            <div class="info-value">{{ result.fields.location or "Not specified" }}</div>
+          </div>
+
+          <div class="info-box">
+            <div class="info-label">Soil Type</div>
+            <div class="info-value">{{ result.fields.soil_type or "Not specified" }}</div>
+          </div>
+
+          <div class="info-box" style="grid-column: 1 / -1;">
+            <div class="info-label">Weather Conditions</div>
+            <div class="info-value">
+              Temp: {{ result.weather.temp or "N/A" }} °C &nbsp;|&nbsp; Humidity: {{ result.weather.humidity or "N/A"
+              }}%
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:center; margin-top: 30px;">
+          <a href="/" class="back-link">← Analyze Another Image</a>
+        </div>
+      </div>
+
+      <!-- Main Content: Advice -->
+      <div class="result-content">
+        <h1 style="color:var(--deep-forest); margin-bottom: 10px; margin-top:0;">Diagnosis Report</h1>
+        <p style="color:#666; margin-bottom: 30px;">Detailed agricultural advice tailored to your crop's condition.</p>
+
+        {% set user_lang = result.fields.language or "English" %}
+        {% set is_non_english = user_lang.lower() != "english" %}
+        {% set has_translation = result.translated_advice and result.translated_advice != result.advice %}
+
+        {% if is_non_english and has_translation %}
+        <!-- Translated Advice -->
+        <div class="advice-section">
+          <h3>Advice in {{ user_lang }}</h3>
+          <p class="advice-text">{{ result.translated_advice }}</p>
+
+          {% if audio_url %}
+          <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #eee;">
+            <h4 style="color:var(--deep-forest); margin-bottom: 10px;">Audio Guidance</h4>
+            <audio controls>
+              <source src="{{ audio_url }}" type="audio/mpeg">
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- English Advice (Secondary) -->
+        <div class="advice-section" style="background: #fdfdfd; border-color: #eee; opacity: 0.9;">
+          <h3 style="color:#666; font-size:1.1rem;">Original Advice (English)</h3>
+          <p class="advice-text" style="font-size: 0.95rem;">{{ result.advice }}</p>
+        </div>
+
+        {% elif is_non_english %}
+        <!-- Translation Failed Warning -->
+        <div class="advice-section" style="background:#fff3cd; border-color:#ffeeba;">
+          <h3 style="color:#856404; font-size:1.2rem;">⚠ Translation Unavailable</h3>
+          <p style="color:#856404;">Could not translate to {{ user_lang }}. Showing English advice below.</p>
+        </div>
+        <div class="advice-section">
+          <h3>Agricultural Advice (English)</h3>
+          <p class="advice-text">{{ result.advice }}</p>
+
+          {% if audio_url %}
+          <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #eee;">
+            <h4 style="color:var(--deep-forest); margin-bottom: 10px;">Audio Guidance</h4>
+            <audio controls>
+              <source src="{{ audio_url }}" type="audio/mpeg">
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+          {% endif %}
+        </div>
+
+        {% else %}
+        <!-- English Only -->
+        <div class="advice-section">
+          <h3>Agricultural Advice</h3>
+          <p class="advice-text">{{ result.advice }}</p>
+
+          {% if audio_url %}
+          <div style="margin-top: 25px; padding-top: 20px; border-top: 1px solid #eee;">
+            <h4 style="color:var(--deep-forest); margin-bottom: 10px;">Audio Guidance</h4>
+            <audio controls>
+              <source src="{{ audio_url }}" type="audio/mpeg">
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
