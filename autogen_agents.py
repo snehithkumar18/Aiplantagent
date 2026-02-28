@@ -286,86 +286,84 @@ def extract_disease_name_from_label(raw_label):
 
 def detect_disease_hf(image_path):
     """
-    Calls the Hugging Face Inference API for an image classification model.
-    Tries multiple models as fallback if primary fails.
-    Uses GROQ LLM as ultimate fallback to analyze image if all models fail.
-    Returns: {"disease": label, "confidence": score, "raw": raw_json}
+    Local PyTorch MobileNetV2 inference for plant disease classification.
+    Falls back to Metadata/Filename Analysis if PyTorch/model is not available.
     """
-    models_to_try = [HUGGINGFACE_MODEL] + [m for m in FALLBACK_MODELS if m != HUGGINGFACE_MODEL]
-    
-    if not HUGGINGFACE_API_KEY or HUGGINGFACE_API_KEY == "your_hf_token_here":
-        print("Warning: HUGGINGFACE_API_KEY not set or is placeholder. Using GROQ LLM fallback for disease detection.")
-        # Use GROQ to analyze the image via base64 encoding or description
-        return detect_disease_with_groq_fallback(image_path)
-    
-    headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
-    
-    for model in models_to_try:
-        try:
-            api_url = f"https://api-inference.huggingface.co/models/{model}"
-            with open(image_path, "rb") as f:
-                files = {"file": f}
-                resp = requests.post(api_url, headers=headers, files=files, timeout=60)
+    CLASS_NAMES = [
+        'Apple___Apple_scab', 'Apple___Black_rot', 'Apple___Cedar_apple_rust', 'Apple___healthy',
+        'Blueberry___healthy',
+        'Cherry_(including_sour)___Powdery_mildew', 'Cherry_(including_sour)___healthy',
+        'Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot', 'Corn_(maize)___Common_rust_', 'Corn_(maize)___Northern_Leaf_Blight', 'Corn_(maize)___healthy',
+        'Grape___Black_rot', 'Grape___Esca_(Black_Measles)', 'Grape___Leaf_blight_(Isariopsis_Leaf_Spot)', 'Grape___healthy',
+        'Orange___Haunglongbing_(Citrus_greening)',
+        'Peach___Bacterial_spot', 'Peach___healthy',
+        'Pepper,_bell___Bacterial_spot', 'Pepper,_bell___healthy',
+        'Potato___Early_blight', 'Potato___Late_blight', 'Potato___healthy',
+        'Raspberry___healthy',
+        'Soybean___healthy',
+        'Squash___Powdery_mildew',
+        'Strawberry___Leaf_scorch', 'Strawberry___healthy',
+        'Tomato___Bacterial_spot', 'Tomato___Early_blight', 'Tomato___Late_blight', 'Tomato___Leaf_Mold', 'Tomato___Septoria_leaf_spot', 'Tomato___Spider_mites Two-spotted_spider_mite', 'Tomato___Target_Spot', 'Tomato___Tomato_Yellow_Leaf_Curl_Virus', 'Tomato___Tomato_mosaic_virus', 'Tomato___healthy'
+    ]
+
+    try:
+        import torch
+        import torch.nn as nn
+        from torchvision import models, transforms
+        from PIL import Image
+        import os
+        
+        # Load model definition
+        model = models.mobilenet_v2()
+        model.classifier[1] = nn.Sequential(
+            nn.Dropout(0.2),
+            nn.Linear(model.classifier[1].in_features, 38)
+        )
+        
+        # Load weights
+        model_path = os.path.join(os.path.dirname(__file__), "mobilenetv2_plant.pth")
+        if not os.path.exists(model_path):
+            print(f"Warning: Model file not found at {model_path}. Using Fallback.")
+            return detect_disease_filename_fallback(image_path)
             
-            if resp.status_code == 410:
-                print(f"Model {model} is gone (410). Trying next fallback...")
-                continue
-                
-            resp.raise_for_status()
-            
-            # Check for HTML response (Hugging Face sometimes returns HTML error pages with 200 OK)
-            content_type = resp.headers.get('Content-Type', '')
-            if "text/html" in content_type or resp.text.strip().startswith("<!DOCTYPE") or resp.text.strip().startswith("<html"):
-                print(f"Model {model} returned HTML instead of JSON (likely API unavailable/gated). Triggering fallback...")
-                continue
+        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+        model.eval()
 
-            result = resp.json()
-            print(f"DEBUG: Model {model} response: {result}")
+        # Image Transformation
+        tf = transforms.Compose([
+            transforms.Resize((224,224)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485,0.456,0.406],
+                                 [0.229,0.224,0.225])
+        ])
 
-            # common HF classifier output: list of {label, score}
-            if isinstance(result, list) and len(result) > 0:
-                top = result[0]
-                raw_label = top.get("label") or str(top)
-                score = float(top.get("score", 0.0))
-                # Extract clean disease name
-                disease_name = extract_disease_name_from_label(raw_label)
-                return {"disease": disease_name, "confidence": round(float(score), 4), "raw": result, "model_used": model}
+        # Convert and Predict
+        img = Image.open(image_path).convert("RGB")
+        x = tf(img).unsqueeze(0)
 
-            # some models return {"error": ...} or other shapes
-            if isinstance(result, dict):
-                # try flexible parsing
-                if "error" in result:
-                    print(f"Model {model} returned error: {result.get('error')}. Trying next...")
-                    continue
-                # try to find labels inside nested outputs
-                if "outputs" in result and isinstance(result["outputs"], list):
-                    out0 = result["outputs"][0]
-                    raw_label = out0.get("label", str(out0))
-                    score = float(out0.get("score", 0.0))
-                    disease_name = extract_disease_name_from_label(raw_label)
-                    return {"disease": disease_name, "confidence": round(float(score), 4), "raw": result, "model_used": model} # type: ignore
-                # fallback: return the whole payload as string
-                raw_label = str(result)
-                disease_name = extract_disease_name_from_label(raw_label)
-                return {"disease": disease_name, "confidence": 0.0, "raw": result, "model_used": model}
+        with torch.no_grad():
+            preds = model(x)
+            probs = torch.softmax(preds, dim=1)[0]
+            index = probs.argmax().item()
 
-            # fallback generic
-            raw_label = str(result)
-            disease_name = extract_disease_name_from_label(raw_label)
-            return {"disease": disease_name, "confidence": 0.0, "raw": result, "model_used": model}
+        raw_label = CLASS_NAMES[index]
+        confidence = float(probs[index])
+        
+        # Clean up the name for the UI
+        disease_name = extract_disease_name_from_label(raw_label.replace("___", " - ").replace("_", " "))
 
-        except requests.exceptions.HTTPError as e:
-            if e.response and e.response.status_code == 410:
-                print(f"Model {model} is gone (410). Trying next fallback...")
-                continue
-            print(f"Hugging Face inference error for {model}:", e)
-            continue
-        except Exception as e:
-            print(f"Hugging Face inference error for {model}:", e)
-            continue
-    
-    # All models failed - use Fallback (Groq Vision is 400/Decommissioned, OpenAI is 429)
-    print("All Hugging Face models failed. Using Metadata/Filename Analysis fallback.")
+        return {
+            "disease": disease_name, 
+            "confidence": round(confidence, 4), 
+            "raw": raw_label, 
+            "model_used": "local-mobilenetv2"
+        }
+
+    except ImportError:
+        print("Warning: PyTorch/torchvision are not installed. Using Fallback.")
+    except Exception as e:
+        print(f"Error during local model inference: {e}")
+        
     return detect_disease_filename_fallback(image_path)
 
 def detect_disease_with_groq_fallback(image_path):

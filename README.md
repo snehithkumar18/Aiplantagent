@@ -4,7 +4,7 @@ This is a production-style demo application for crop disease detection and agric
 
 ## Features
 
-- **Image Disease Detection** via Hugging Face Inference API (Default: `Daksh159/plant-disease-mobilenetv2`)
+- **Local Image Disease Detection** via PyTorch MobileNetV2 (`Daksh159/plant-disease-mobilenetv2` offline weights)
 - **Robust Fallback System**:
     - **Vision Fallback**: Uses Llama-3.2-11b-vision (if available) to describe images when disease detection fails.
     - **Smart Metadata Analysis**: Uses Llama-3.3-70b-versatile to generate professional diagnoses from filenames if visual APIs are down.
@@ -17,6 +17,7 @@ This is a production-style demo application for crop disease detection and agric
 ## Prerequisites
 
 - Python 3.8 or higher
+- **PyTorch & Torchvision** (for local disease classification inference)
 - FFmpeg (required for pydub audio processing)
   - Windows: Download from https://ffmpeg.org/download.html or use `choco install ffmpeg`
   - Linux: `sudo apt-get install ffmpeg`
