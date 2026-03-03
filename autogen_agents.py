@@ -1186,3 +1186,7 @@ def check_api_keys_startup():
 
 # Run check on import
 check_api_keys_startup()
+
+
+# Make sure pipeline calls the correct function
+
