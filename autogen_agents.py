@@ -723,7 +723,7 @@ def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
         "You are an expert agronomist. Provide concise treatment and preventive advice for a farmer.\n"
         f"Inputs:\n- Disease/Condition: {disease}\n- Model confidence: {confidence}\n- Temperature: {temp} °C\n- Humidity: {humidity} %\n- Soil type: {soil_type}\n\n"
         "If the condition is 'Not a plant' or 'Unknown Object', politely ask for a plant image.\n"
-        "Give:\n1) One-line summary of diagnosis.\n2) 3 short actionable steps for treatment (include method/product suggestion if common).\n3) 2 short preventive measures.\nKeep language simple and short (farmer-friendly). Output only text."
+        "Give:\n1) One-line summary of diagnosis.\n2) 3 short actionable steps for treatment (include method/product suggestion if common).\n3) 2 short preventive measures.\n4) Predict some other diseases this plant is prone to based on the given weather conditions, and provide steps to prevent them.\nKeep language simple and short (farmer-friendly). Output only text."
     )
     
     # Try GROQ first

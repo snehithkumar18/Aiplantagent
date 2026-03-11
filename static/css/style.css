@@ -761,3 +761,9 @@ input[list]::-webkit-calendar-picker-indicator {
 div[style*='border-top: 1px solid #eee;'] {
   border-top: 1px solid var(--glass-border) !important;
 }
+
+
+/* Added to format advice text with newlines */
+.advice-text {
+    white-space: pre-wrap !important;
+}
