@@ -757,13 +757,108 @@ input[list]::-webkit-calendar-picker-indicator {
         font-size: 1.05rem;
     }
 }
+
 /* Fix bright inline borders */
 div[style*='border-top: 1px solid #eee;'] {
-  border-top: 1px solid var(--glass-border) !important;
+    border-top: 1px solid var(--glass-border) !important;
 }
 
 
 /* Added to format advice text with newlines */
 .advice-text {
     white-space: pre-wrap !important;
+}
+
+/* Custom Soil Dropdown Styles */
+.custom-select {
+    position: relative;
+    font-family: var(--font-body);
+    width: 100%;
+    cursor: pointer;
+}
+
+.select-selected {
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: var(--text-main);
+    padding: 14px 18px;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all 0.3s ease;
+}
+
+.custom-select.open .select-selected,
+.select-selected:hover {
+    border-color: var(--primary-green);
+    box-shadow: 0 0 15px rgba(57, 255, 20, 0.4);
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.select-items {
+    position: absolute;
+    background: rgba(10, 15, 10, 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--primary-green);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.9), 0 0 20px rgba(57, 255, 20, 0.2);
+    border-radius: 8px;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 99;
+    margin-top: 5px;
+    max-height: 450px;
+    overflow-y: auto;
+}
+
+.select-hide {
+    display: none;
+}
+
+.select-item {
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    gap: 25px;
+    color: var(--text-main);
+    transition: all 0.2s;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 1.4rem;
+    font-weight: 600;
+}
+
+.select-item:last-child {
+    border-bottom: none;
+}
+
+.select-item img {
+    width: 150px;
+    height: 150px;
+    border-radius: 12px;
+    object-fit: cover;
+    border: 2px solid var(--glass-border);
+    transition: transform 0.2s;
+}
+
+.select-item:hover img {
+    transform: scale(1.05);
+    border-color: var(--primary-green);
+}
+
+.select-selected img {
+    width: 80px;
+    height: 80px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 2px solid var(--primary-green);
+    box-shadow: 0 0 12px var(--primary-green);
+}
+
+.select-item:hover,
+.same-as-selected {
+    background-color: rgba(57, 255, 20, 0.15);
+    color: var(--primary-green);
 }

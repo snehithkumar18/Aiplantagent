@@ -36,10 +36,39 @@
           </div>
 
           <label>Soil Type (Optional)</label>
-          <div class="input-wrapper">
-            <input type="text" id="soil_type" name="soil_type" placeholder="e.g., Loam, Sandy, Clay" />
-            <button type="button" class="btn-mic" onclick="startDictation('soil_type', this)"
-              title="Tap to speak">🎤</button>
+          <div class="input-wrapper" style="position: relative;">
+            <input type="hidden" id="soil_type" name="soil_type" value="" />
+
+            <div class="custom-select" id="soilSelect" tabindex="0">
+              <div class="select-selected" id="soilSelectedText">Select a Soil Type...</div>
+              <div class="select-items select-hide" id="soilDropdown">
+                <div class="select-item" data-value="Red Soil">
+                  <img src="{{ url_for('static', filename='images/soils/red_soil.jpg') }}" alt="Red Soil">
+                  <span>Red Soil</span>
+                </div>
+                <div class="select-item" data-value="Black Cotton Soil">
+                  <img src="{{ url_for('static', filename='images/soils/black_soil.jpg') }}" alt="Black Cotton Soil">
+                  <span>Black Cotton Soil</span>
+                </div>
+                <div class="select-item" data-value="Alluvial Soil">
+                  <img src="{{ url_for('static', filename='images/soils/alluvial_soil.jpg') }}" alt="Alluvial Soil">
+                  <span>Alluvial Soil</span>
+                </div>
+                <div class="select-item" data-value="Laterite Soil">
+                  <img src="{{ url_for('static', filename='images/soils/laterite_soil.jpg') }}" alt="Laterite Soil">
+                  <span>Laterite Soil</span>
+                </div>
+                <div class="select-item" data-value="Arid/Desert Soil">
+                  <img src="{{ url_for('static', filename='images/soils/arid_soil.jpg') }}" alt="Arid/Desert Soil">
+                  <span>Arid/Desert Soil</span>
+                </div>
+                <div class="select-item" data-value="Mountain/Forest Soil">
+                  <img src="{{ url_for('static', filename='images/soils/mountain_soil.jpg') }}"
+                    alt="Mountain/Forest Soil">
+                  <span>Mountain/Forest Soil</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <label>Preferred Language</label>
@@ -145,7 +174,51 @@
       }
     });
 
-    // Speech to Text
+    // Custom Soil Dropdown Logic
+    const soilSelect = document.getElementById("soilSelect");
+    const soilSelectedText = document.getElementById("soilSelectedText");
+    const soilDropdown = document.getElementById("soilDropdown");
+    const soilItems = document.querySelectorAll(".select-item");
+    const soilHiddenInput = document.getElementById("soil_type");
+
+    // Toggle dropdown
+    soilSelect.addEventListener("click", function (e) {
+      soilDropdown.classList.toggle("select-hide");
+      soilSelect.classList.toggle("open");
+    });
+
+    // Handle item selection
+    soilItems.forEach(item => {
+      item.addEventListener("click", function (e) {
+        // Stop event from immediately bubbling to document click listener
+        e.stopPropagation();
+
+        // Update hidden input value
+        const val = this.getAttribute("data-value");
+        soilHiddenInput.value = val;
+
+        // Update displayed text/image
+        soilSelectedText.innerHTML = this.innerHTML;
+
+        // Highlight selected item
+        soilItems.forEach(i => i.classList.remove("same-as-selected"));
+        this.classList.add("same-as-selected");
+
+        // Close dropdown
+        soilDropdown.classList.add("select-hide");
+        soilSelect.classList.remove("open");
+      });
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener("click", function (e) {
+      if (!soilSelect.contains(e.target)) {
+        soilDropdown.classList.add("select-hide");
+        soilSelect.classList.remove("open");
+      }
+    });
+
+    // Speech to Text (Location Only)
     function startDictation(inputId, btn) {
       if (window.hasOwnProperty('webkitSpeechRecognition') || window.hasOwnProperty('SpeechRecognition')) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
