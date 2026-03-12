@@ -19,7 +19,7 @@ def allowed_file(filename):
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html")
+    return render_template("index.html", openweather_api_key=os.getenv("OPENWEATHER_API_KEY", ""))
 
 @app.route("/analyze", methods=["POST"])
 def analyze():

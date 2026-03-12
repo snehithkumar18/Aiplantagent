@@ -31,6 +31,7 @@
           <label>Location</label>
           <div class="input-wrapper">
             <input type="text" id="location" name="location" placeholder="e.g., Hyderabad" />
+            <button type="button" class="btn-location" id="getLocationBtn" title="Get Current Location" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; padding: 0 10px; transition: transform 0.2s;">📍</button>
             <button type="button" class="btn-mic" onclick="startDictation('location', this)"
               title="Tap to speak">🎤</button>
           </div>
@@ -252,6 +253,65 @@
       } else {
         alert("Web Speech API not supported in this browser. Please use Chrome, Edge, or Safari.");
       }
+    }
+
+    // Geolocation Fetching setup
+    const getLocationBtn = document.getElementById('getLocationBtn');
+    const locationInput = document.getElementById('location');
+    const OPENWEATHER_API_KEY = "{{ openweather_api_key }}";
+
+    function fetchLocation() {
+      if (navigator.geolocation) {
+        if (getLocationBtn) getLocationBtn.innerText = '⏳';
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            
+            if (OPENWEATHER_API_KEY) {
+              try {
+                // Fetch City Name via OpenWeather Reverse Geocoding API
+                const response = await fetch(`https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lon}&limit=1&appid=${OPENWEATHER_API_KEY}`);
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                  locationInput.value = `${data[0].name}, ${data[0].country}`;
+                } else {
+                  locationInput.value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+                }
+              } catch (error) {
+                console.error("Error fetching city name:", error);
+                locationInput.value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+              }
+            } else {
+              // Fallback to coordinates if no OpenWeather API key is provided
+              locationInput.value = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            }
+            if (getLocationBtn) getLocationBtn.innerText = '📍';
+          },
+          (error) => {
+            console.error("Error getting location:", error);
+            // We do not alert on page load to be less intrusive if they cancel, but we reset the button
+            if (getLocationBtn) getLocationBtn.innerText = '📍';
+          }
+        );
+      } else {
+        console.warn("Geolocation is not supported by your browser.");
+      }
+    }
+
+    // Call automatically when the page loads
+    window.addEventListener('DOMContentLoaded', fetchLocation);
+
+    // Call manually when the button is clicked
+    if (getLocationBtn) {
+      getLocationBtn.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+          alert("Geolocation is not supported by your browser.");
+          return;
+        }
+        fetchLocation();
+      });
     }
   </script>
 </body>
