@@ -19,7 +19,10 @@ The AI Crop Doctor follows a client-server architecture, intertwining modern web
 ### A. Frontend (User Interface)
 The frontend serves as the primary data ingestion point. It is built using:
 1. **HTML5 & CSS3:** For structuring and styling a responsive, user-friendly dashboard capable of running on mobile devices.
-2. **Vanilla JavaScript:** Facilitates client-side logic, such as asynchronous file uploads, loading screen management, and integration of the native **Web Speech API**. The Web Speech API allows users with limited digital literacy to dictate their location, soil type, and preferred language directly via a microphone, completely eliminating typing barriers.
+2. **Vanilla JavaScript & Device APIs:** Facilitates client-side logic, asynchronous file uploads, and loading screen management. Two primary browser APIs are integrated to eliminate typing barriers:
+   - **HTML5 Geolocation API:** The system automatically requests user coordinates (Latitude/Longitude) upon page load. Once permitted, these coordinates are piped via an asynchronous fetch call directly to the OpenWeather Reverse Geocoding API to seamlessly extract the user's City and Country. 
+   - **Web Speech API:** Allows users with limited digital literacy to dictate their location or preferred language directly via a microphone.
+3. **Dynamic Visual Elements:** The UI replaces standard text boxes with highly accessible image-based selection drop-downs. Most notably, the *Soil Type* selector displays real textural images (generated dynamically via AI) of all eight primary Indian soil types, ranging from Alluvial to Peaty & Marshy soils.
 
 ### B. Backend Framework
 1. **Python (3.8+):** Serves as the core programming language handling logic, system I/O, and API integrations.
@@ -47,19 +50,21 @@ The system attempts to classify the crop disease using a sophisticated 3-tier ca
    - **Model Details:** GROQ Llama Text Model.
    - **Functionality:** It uses the uploaded file’s name (e.g., `tomato_blight.jpg`) to cleverly deduce the intended crop and disease context using NLP techniques and regex, ensuring that the pipeline never halts.
 
-### Module B: Context Gathering (The Weather Agent)
+### Module B: Context Gathering (The Weather & Geographic Agent)
 Agricultural treatments depend heavily on climatic states.
-1. **Library & API:** `requests` module interfacing with the **OpenWeatherMap API**.
-2. **Functionality:** By using the location string submitted by the user, this module fetches real-time temperature (°C), humidity (%), and weather descriptions. This data gives the generative LLM crucial context (e.g., modifying fungicide advice if it is currently raining or humid).
+1. **Libraries & APIs:** `requests` module interfacing with the **OpenWeatherMap API**, supported by client-side browser GPS.
+2. **Functionality:** 
+   - **Geographic Translation:** As described in Section II-A, explicit city names are extracted losslessly from precise user coordinates via reverse geocoding.
+   - **Atmospheric Extraction:** Supplying the location string, this module fetches real-time temperature (°C), humidity (%), and weather descriptions. This provides the generative LLM crucial context for accurate chemical treatment recommendations (e.g., modifying fungicide advice if it is currently raining or highly humid).
 
 ### Module C: Agronomist Advice Generation
 Once the disease string, weather context, and soil type are confirmed, the system prescribes treatments.
 1. **Primary Agent (GROQ Llama 3.3 70B Versatile):**
    - **Model Details:** A state-of-the-art 70-billion parameter generative language model accessed via the GROQ API.
-   - **Functionality:** Driven by an advanced prompt, the LLM assumes the persona of an expert agronomist. It consumes the diagnosis, confidence score, weather, and soil type, outputting:
+   - **Functionality:** Driven by an advanced prompt, the LLM assumes the persona of an expert agronomist. It consumes the diagnosis, confidence score, weather, and **soil classifier** (one of the eight structural types native to the Indian subcontinent: Alluvial, Red, Black, Laterite, Arid, Mountain, Alkaline, or Peaty), outputting:
      - A 1-line diagnostic summary.
      - 3 actionable treatment steps (including specific chemical or organic solutions).
-     - 2 preventative measures.
+     - 2 preventative measures tailored to avoid future environmental or soil-borne triggers.
      - Predictive analytics on secondary diseases prone to occur under current weather conditions.
 2. **First Fallback (Alternative GROQ Model):** Switches to `llama3-70b-8192` if the primary model fails.
 3. **Second Fallback (Rule-Based Expert System):** If all LLMs fail, the system queries a hardcoded Python dictionary mapping disease keywords (e.g., "blight", "rust", "powdery mildew") to standard, verified agricultural treatments.
@@ -83,7 +88,7 @@ Accessible UI requires accommodating users with low literacy.
 
 ## IV. PROCESS WORKFLOW
 
-1. **User Initiation:** A farmer accesses `/index.html`, dictates their context via the microphone, and uploads an image. Both are posted to `/analyze`.
+1. **User Initiation:** A farmer accesses `/index.html`. The app silently proxies their GPS coordinates into a City format. They visually select their soil texture (from 8 specific classifications) and upload a leaf image. Both are securely posted to `/analyze`.
 2. **Pipeline Trigger:** Flask invokes `run_crop_pipeline()` inside `autogen_agents.py`.
 3. **Vision Processing:** The Local CNN (MobileNetV2) or Vision LLM extracts the disease name.
 4. **Context Injection:** OpenWeatherMap API pulls live climate data.
