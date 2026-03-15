@@ -366,6 +366,49 @@ def detect_disease_hf(image_path):
         
     return detect_disease_filename_fallback(image_path)
 
+def basic_leaf_precheck(image_path):
+    """
+    Fast image pre-processing check using color statistics.
+    Heuristic: real crop/leaf images usually contain a strong band of green-ish pixels.
+    Returns:
+      - True  => likely plant/leaf
+      - False => likely NOT a plant/leaf
+      - None  => could not decide (I/O or processing error)
+    """
+    try:
+        from PIL import Image
+
+        img = Image.open(image_path).convert("RGB")
+        # Work on a small thumbnail for speed
+        img.thumbnail((256, 256))
+
+        # Convert to HSV to isolate green band
+        hsv = img.convert("HSV")
+        pixels = list(hsv.getdata())
+        total = len(pixels)
+        if total == 0:
+            return None
+
+        green_count = 0
+        for h, s, v in pixels:
+            # h,s,v in 0-255 range in PIL's HSV
+            # Approx green band: 35–140 degrees => ~25–100 in 0–255 space
+            if 25 <= h <= 100 and s > 60 and v > 40:
+                green_count += 1
+
+        green_ratio = green_count / float(total)
+        # If there is almost no green, it's probably not a leaf/crop
+        if green_ratio < 0.10:
+            return False
+        # If there is a lot of green, very likely a plant
+        if green_ratio > 0.25:
+            return True
+
+        return None
+    except Exception as e:
+        print(f"basic_leaf_precheck failed: {e}")
+        return None
+
 def detect_disease_with_groq_fallback(image_path):
     """
     Use GROQ Vision (Llama 3.2 Vision) as fallback for disease detection when HuggingFace API is unavailable.
@@ -719,12 +762,33 @@ def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
     """
     Generate agricultural advice using GROQ (primary) or fallback.
     """
-    prompt = (
-        "You are an expert agronomist. Provide concise treatment and preventive advice for a farmer.\n"
-        f"Inputs:\n- Disease/Condition: {disease}\n- Model confidence: {confidence}\n- Temperature: {temp} °C\n- Humidity: {humidity} %\n- Soil type: {soil_type}\n\n"
-        "If the condition is 'Not a plant' or 'Unknown Object', politely ask for a plant image.\n"
-        "Give:\n1) One-line summary of diagnosis.\n2) 3 short actionable steps for treatment (include method/product suggestion if common).\n3) 2 short preventive measures.\n4) Predict some other diseases this plant is prone to based on the given weather conditions, and provide steps to prevent them.\nKeep language simple and short (farmer-friendly). Output only text."
-    )
+    disease_lower = str(disease or "").lower()
+    
+    if "not a plant" in disease_lower or "unknown object" in disease_lower:
+        return "Diagnosis: The uploaded image does not appear to be a plant or crop leaf.\n\nAdvice:\n1. Please upload a clear image of a plant leaf.\n2. Ensure the leaf is well-lit and in focus.\n3. Avoid uploading images of people, animals, or unrelated objects."
+
+    if "healthy" in disease_lower:
+        prompt = (
+            "You are an expert agronomist. Provide concise preventive advice for a farmer with a healthy crop.\n"
+            f"Inputs:\n- Crop Condition: {disease}\n- Temperature: {temp} °C\n- Humidity: {humidity} %\n- Soil type: {soil_type}\n\n"
+            "This plant is currently HEALTHY. Do not provide disease treatments.\n"
+            "Give:\n"
+            "1) A brief encouraging summary about the healthy status.\n"
+            "2) 3 short, actionable preventive measures to maintain plant health.\n"
+            "3) PREDICT specific future diseases this plant is prone to based on the current weather conditions, and provide steps to prevent them.\n"
+            "Keep language simple and short (farmer-friendly). Output only text."
+        )
+    else:
+        prompt = (
+            "You are an expert agronomist. Provide concise treatment and preventive advice for a farmer.\n"
+            f"Inputs:\n- Disease/Condition: {disease}\n- Model confidence: {confidence}\n- Temperature: {temp} °C\n- Humidity: {humidity} %\n- Soil type: {soil_type}\n\n"
+            "Give:\n"
+            "1) One-line summary of diagnosis.\n"
+            "2) 3 short actionable steps for treatment (include method/product suggestion if common).\n"
+            "3) 2 short preventive measures.\n"
+            "4) Predict some other diseases this plant is prone to based on the given weather conditions, and provide steps to prevent them.\n"
+            "Keep language simple and short (farmer-friendly). Output only text."
+        )
     
     # Try GROQ first
     out = groq_generate(prompt, max_tokens=400, temperature=0.2)
@@ -733,7 +797,7 @@ def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
     if not out or not out.strip() or "error" in out.lower():
         print("Primary GROQ model failed, trying fallback model (llama3-70b-8192)...")
         # Temporarily switch model
-        original_model = GROQ_MODEL
+        original_model = globals().get("GROQ_MODEL", "llama-3.3-70b-versatile")
         globals()["GROQ_MODEL"] = "llama3-70b-8192"
         out = groq_generate(prompt, max_tokens=400, temperature=0.2)
         globals()["GROQ_MODEL"] = original_model # Restore
@@ -1059,9 +1123,30 @@ def run_crop_pipeline(image_path, fallback_location=None, fallback_language="Eng
     fields = {"location": fallback_location, "soil_type": fallback_soil, "language": fallback_language}
     # Audio processing removed - fields come directly from frontend
 
-    detect = detect_disease_hf(image_path)
-    disease = detect.get("disease", "Unknown")
-    confidence = detect.get("confidence", 0.0)
+    # Step 0: cheap color-based pre-check to ensure it's a plant/leaf image
+    color_gate = basic_leaf_precheck(image_path)
+    if color_gate is False:
+        disease = "Not a plant image"
+        confidence = 1.0
+        detect = {
+            "disease": disease,
+            "confidence": confidence,
+            "raw": "color_gate_rejection",
+            "method": "color_gate"
+        }
+    else:
+        # Normal disease detection with local model only
+        detect = detect_disease_hf(image_path)
+        disease = detect.get("disease", "Unknown")
+        confidence = detect.get("confidence", 0.0)
+
+        # Extra safety: if local model itself is unsure, also reject as non‑plant / unclear.
+        if confidence < 0.65 and "not a plant" not in disease.lower():
+            disease = "Not a plant image"
+            detect["disease"] = disease
+            detect["raw"] = "low_confidence_rejection"
+            detect["confidence"] = 1.0
+            confidence = 1.0
 
     weather = get_weather(fields.get("location"))
 

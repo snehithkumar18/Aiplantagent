@@ -110,6 +110,18 @@
 
         {% else %}
         <!-- English Only -->
+        {% set is_not_plant = result.disease and 'not a plant' in result.disease|lower %}
+
+        {% if is_not_plant %}
+        <!-- Special handling when the image is not a plant -->
+        <div class="advice-section">
+          <h3>Image Rejected</h3>
+          <p class="advice-text">
+            The uploaded image does not appear to be a crop or plant leaf.
+            Please upload a clear photo of a plant leaf (with or without disease) taken in good lighting.
+          </p>
+        </div>
+        {% else %}
         <div class="advice-section">
           <h3>Agricultural Advice</h3>
           <p class="advice-text">{{ result.advice }}</p>
@@ -124,6 +136,7 @@
           </div>
           {% endif %}
         </div>
+        {% endif %}
         {% endif %}
       </div>
     </div>
