@@ -801,7 +801,10 @@ def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
     disease_lower = str(disease or "").lower()
     
     if "not a plant" in disease_lower or "unknown object" in disease_lower:
-        return "Diagnosis: The uploaded image does not appear to be a plant or crop leaf.\n\nAdvice:\n1. Please upload a clear image of a plant leaf.\n2. Ensure the leaf is well-lit and in focus.\n3. Avoid uploading images of people, animals, or unrelated objects."
+        return "Diagnosis: The uploaded image does not appear to be a plant or crop leaf.\n\nAdvice:\n1. Please upload a clear photo of a plant leaf.\n2. Ensure the leaf is well-lit and in focus.\n3. Avoid uploading images of people, animals, or unrelated objects."
+
+    if "unclear" in disease_lower or "low quality" in disease_lower:
+        return "Diagnosis: The uploaded image is not clear enough for a reliable diagnosis.\n\nAdvice:\n1. Please take a sharp, well-lit photograph of the leaf.\n2. Hold the camera steady and ensure the leaf fills most of the frame.\n3. Avoid blurry or extremely dark images."
 
     if "healthy" in disease_lower:
         prompt = (
@@ -1168,7 +1171,7 @@ def run_crop_pipeline(image_path, fallback_location=None, fallback_language="Eng
         logger.warning("Plant detector unavailable; falling back to legacy heuristic precheck")
         color_gate = basic_leaf_precheck(image_path)
         if color_gate is False:
-            disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
+            disease = "Image is unclear or does not appear to be a plant."
             confidence = 1.0
             detect = {"disease": disease, "confidence": confidence, "raw": "color_gate_rejection", "method": "color_gate"}
         else:
@@ -1179,18 +1182,45 @@ def run_crop_pipeline(image_path, fallback_location=None, fallback_language="Eng
         try:
             status, box, err = detect_plant_detailed(image_path)
             if status == "detected":
-                # Plant detected -> always classify the ORIGINAL image for best disease accuracy
-                detect = detect_disease_hf(image_path, allow_fallback=False)
+                # ROI (Region of Interest) Optimization:
+                # Instead of classifying the full image, we crop (zoom-in) on the leaf
+                # identified by YOLO. This removes background noise and significantly boosts accuracy.
+                if box is not None:
+                    try:
+                        from PIL import Image
+                        x1, y1, x2, y2 = box
+                        with Image.open(image_path) as full_img:
+                            # Apply a small padding (5%) so symptoms on the edge aren't lost
+                            w, h = full_img.size
+                            pw = int((x2 - x1) * 0.05)
+                            ph = int((y2 - y1) * 0.05)
+                            
+                            cx1 = max(0, x1 - pw)
+                            cy1 = max(0, y1 - ph)
+                            cx2 = min(w, x2 + pw)
+                            cy2 = min(h, y2 + ph)
+                            
+                            cropped_img = full_img.crop((cx1, cy1, cx2, cy2)).convert("RGB")
+                            detect = detect_disease_hf(cropped_img, allow_fallback=False)
+                            detect["roi_applied"] = True
+                            detect["plant_box"] = box
+                    except Exception as crop_err:
+                        logger.error("ROI Cropping failed: %s. Falling back to original image.", crop_err)
+                        detect = detect_disease_hf(image_path, allow_fallback=False)
+                        detect["roi_applied"] = False
+                        detect["plant_box"] = box
+                else:
+                    detect = detect_disease_hf(image_path, allow_fallback=False)
+                
+                # Extract results for downstream processing
                 disease = detect.get("disease", "Unknown")
                 confidence = detect.get("confidence", 0.0)
-                if box is not None:
-                    detect["plant_box"] = box
             elif status == "failed":
                 # YOLO failed -> fallback to color-statistics gate
                 logger.warning("YOLO plant detection failed, falling back to color gate: %s", err)
                 color_gate = basic_leaf_precheck(image_path)
                 if color_gate is False:
-                    disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
+                    disease = "The image is not clear enough for detection."
                     confidence = 1.0
                     detect = {"disease": disease, "confidence": confidence, "raw": "color_gate_rejection_after_yolo_fail", "method": "color_gate_fallback"}
                 else:
@@ -1200,7 +1230,7 @@ def run_crop_pipeline(image_path, fallback_location=None, fallback_language="Eng
                     detect["raw"] = {"yolo_error": err, "fallback": "color_gate_then_classify"}
                     detect["method"] = "yolo_failed_color_gate_fallback"
             else:
-                disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
+                disease = "The uploaded image is not a plant leaf."
                 confidence = 1.0
                 detect = {"disease": disease, "confidence": confidence, "raw": "no_leaf_detected", "method": "yolo_leaf_detector"}
         except Exception as e:
