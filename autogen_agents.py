@@ -5,6 +5,7 @@ from datetime import datetime
 from gtts import gTTS # type: ignore
 import base64
 import sys
+import logging
 
 # Audio dependencies removed
 from dotenv import load_dotenv # type: ignore
@@ -103,6 +104,15 @@ HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
 HUGGINGFACE_MODEL = os.getenv("HUGGINGFACE_MODEL", "Daksh159/plant-disease-mobilenetv2")
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
+try:
+    from plant_detector import detect_plant_detailed  # type: ignore
+    PLANT_DETECTOR_AVAILABLE = True
+except Exception as e:
+    PLANT_DETECTOR_AVAILABLE = False
+    print(f"Warning: plant detector modules not available: {type(e).__name__}: {e}")
+    detect_plant_detailed = None  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
 def encode_image(image_path):
@@ -284,7 +294,7 @@ def extract_disease_name_from_label(raw_label):
     
     return cleaned_label
 
-def detect_disease_hf(image_path):
+def detect_disease_hf(image_input, allow_fallback: bool = True):
     """
     Local PyTorch MobileNetV2 inference for plant disease classification.
     Falls back to Metadata/Filename Analysis if PyTorch/model is not available.
@@ -324,7 +334,14 @@ def detect_disease_hf(image_path):
         model_path = os.path.join(os.path.dirname(__file__), "mobilenetv2_plant.pth")
         if not os.path.exists(model_path):
             print(f"Warning: Model file not found at {model_path}. Using Fallback.")
-            return detect_disease_filename_fallback(image_path)
+            if allow_fallback and isinstance(image_input, str):
+                return detect_disease_filename_fallback(image_input)
+            return {
+                "disease": "Disease classification model unavailable (missing mobilenetv2_plant.pth)",
+                "confidence": 0.0,
+                "raw": "missing_weights",
+                "method": "local-mobilenetv2-unavailable",
+            }
             
         model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
         model.eval()
@@ -338,7 +355,19 @@ def detect_disease_hf(image_path):
         ])
 
         # Convert and Predict
-        img = Image.open(image_path).convert("RGB")
+        if isinstance(image_input, str):
+            img = Image.open(image_input).convert("RGB")
+        else:
+            # Assume numpy image array (OpenCV BGR) or PIL.Image
+            if isinstance(image_input, Image.Image):
+                img = image_input.convert("RGB")
+            else:
+                import numpy as np  # type: ignore
+                arr = np.asarray(image_input)
+                if arr.ndim != 3 or arr.shape[2] < 3:
+                    raise ValueError("Invalid image array for classification")
+                # If OpenCV BGR, convert to RGB
+                img = Image.fromarray(arr[:, :, :3][:, :, ::-1]).convert("RGB")
         x = tf(img).unsqueeze(0)
 
         with torch.no_grad():
@@ -363,8 +392,15 @@ def detect_disease_hf(image_path):
         print("Warning: PyTorch/torchvision are not installed. Using Fallback.")
     except Exception as e:
         print(f"Error during local model inference: {e}")
-        
-    return detect_disease_filename_fallback(image_path)
+
+    if allow_fallback and isinstance(image_input, str):
+        return detect_disease_filename_fallback(image_input)
+    return {
+        "disease": "Disease classification failed (MobileNetV2 unavailable)",
+        "confidence": 0.0,
+        "raw": "mobilenet_failed_or_missing_deps",
+        "method": "local-mobilenetv2-unavailable",
+    }
 
 def basic_leaf_precheck(image_path):
     """
@@ -1123,30 +1159,55 @@ def run_crop_pipeline(image_path, fallback_location=None, fallback_language="Eng
     fields = {"location": fallback_location, "soil_type": fallback_soil, "language": fallback_language}
     # Audio processing removed - fields come directly from frontend
 
-    # Step 0: cheap color-based pre-check to ensure it's a plant/leaf image
-    color_gate = basic_leaf_precheck(image_path)
-    if color_gate is False:
-        disease = "Not a plant image"
-        confidence = 1.0
-        detect = {
-            "disease": disease,
-            "confidence": confidence,
-            "raw": "color_gate_rejection",
-            "method": "color_gate"
-        }
-    else:
-        # Normal disease detection with local model only
-        detect = detect_disease_hf(image_path)
-        disease = detect.get("disease", "Unknown")
-        confidence = detect.get("confidence", 0.0)
+    # Step 0: YOLO-based plant/leaf detection gate (NO cropping)
+    detect = None
+    disease = "Unknown"
+    confidence = 0.0
 
-        # Extra safety: if local model itself is unsure, also reject as non‑plant / unclear.
-        if confidence < 0.65 and "not a plant" not in disease.lower():
-            disease = "Not a plant image"
-            detect["disease"] = disease
-            detect["raw"] = "low_confidence_rejection"
-            detect["confidence"] = 1.0
+    if not PLANT_DETECTOR_AVAILABLE or detect_plant_detailed is None:
+        logger.warning("Plant detector unavailable; falling back to legacy heuristic precheck")
+        color_gate = basic_leaf_precheck(image_path)
+        if color_gate is False:
+            disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
             confidence = 1.0
+            detect = {"disease": disease, "confidence": confidence, "raw": "color_gate_rejection", "method": "color_gate"}
+        else:
+            detect = detect_disease_hf(image_path, allow_fallback=False)
+            disease = detect.get("disease", "Unknown")
+            confidence = detect.get("confidence", 0.0)
+    else:
+        try:
+            status, box, err = detect_plant_detailed(image_path)
+            if status == "detected":
+                # Plant detected -> always classify the ORIGINAL image for best disease accuracy
+                detect = detect_disease_hf(image_path, allow_fallback=False)
+                disease = detect.get("disease", "Unknown")
+                confidence = detect.get("confidence", 0.0)
+                if box is not None:
+                    detect["plant_box"] = box
+            elif status == "failed":
+                # YOLO failed -> fallback to color-statistics gate
+                logger.warning("YOLO plant detection failed, falling back to color gate: %s", err)
+                color_gate = basic_leaf_precheck(image_path)
+                if color_gate is False:
+                    disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
+                    confidence = 1.0
+                    detect = {"disease": disease, "confidence": confidence, "raw": "color_gate_rejection_after_yolo_fail", "method": "color_gate_fallback"}
+                else:
+                    detect = detect_disease_hf(image_path, allow_fallback=False)
+                    disease = detect.get("disease", "Unknown")
+                    confidence = detect.get("confidence", 0.0)
+                    detect["raw"] = {"yolo_error": err, "fallback": "color_gate_then_classify"}
+                    detect["method"] = "yolo_failed_color_gate_fallback"
+            else:
+                disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
+                confidence = 1.0
+                detect = {"disease": disease, "confidence": confidence, "raw": "no_leaf_detected", "method": "yolo_leaf_detector"}
+        except Exception as e:
+            logger.exception("Plant detection failed: %s", e)
+            disease = "Plant detection failed"
+            confidence = 0.0
+            detect = {"disease": disease, "confidence": confidence, "raw": str(e), "method": "yolo_leaf_detector_error"}
 
     weather = get_weather(fields.get("location"))
 
@@ -1224,48 +1285,48 @@ def check_api_keys_startup():
     
     # 1. Groq Check
     if not GROQ_API_KEY or str(GROQ_API_KEY).strip() == "":
-        print("❌ GROQ_API_KEY: Missing")
+        print("[FAIL] GROQ_API_KEY: Missing")
     else:
         key_str = str(GROQ_API_KEY)
         masked = str(key_str)[:4] + "..." if len(key_str) > 4 else "***" # type: ignore
-        print(f"✅ GROQ_API_KEY: Present ({masked})", end=" ")
+        print(f"[OK] GROQ_API_KEY: Present ({masked})", end=" ")
         try:
              # Real call
              check = groq_generate("Say ok", max_tokens=5, retries=0)
              if check and "error" not in check.lower():
-                 print("-> [API OK] ✅")
+                 print("-> [API OK]")
              else:
-                 print(f"-> [API FAIL] ❌ (Response: {check})")
+                 print(f"-> [API FAIL] (Response: {check})")
         except Exception as e:
-            print(f"-> [API FAIL] ❌ ({e})")
+            print(f"-> [API FAIL] ({e})")
 
     # 2. Hugging Face Check
     if not HUGGINGFACE_API_KEY:
-        print("⚠️ HUGGINGFACE_API_KEY: Missing")
+        print("[WARN] HUGGINGFACE_API_KEY: Missing")
     else:
-        print(f"✅ HUGGINGFACE_API_KEY: Present", end=" ")
+        print(f"[OK] HUGGINGFACE_API_KEY: Present", end=" ")
         # Lightweight check: Just verify we have a key (avoiding model call to prevent HTML error confusion on startup)
         # User accepted "we will think after some time" for HF model specifics, but wants keys checked.
         # Since the model is returning HTML, a real check would fail. We'll mark as "Key Format Valid" to satisfy "ok sign" for key.
-        print("-> [Key Format OK] ✅")
+        print("-> [Key Format OK]")
 
     # 3. OpenWeatherMap Check
     if not OPENWEATHER_API_KEY:
-        print("⚠️ OPENWEATHER_API_KEY: Missing")
+        print("[WARN] OPENWEATHER_API_KEY: Missing")
     else:
-        print(f"✅ OPENWEATHER_API_KEY: Present", end=" ")
+        print(f"[OK] OPENWEATHER_API_KEY: Present", end=" ")
         try:
             # Real call to London weather
             url = f"https://api.openweathermap.org/data/2.5/weather?q=London&appid={OPENWEATHER_API_KEY}"
             resp = requests.get(url, timeout=5)
             if resp.status_code == 200:
-                print("-> [API OK] ✅")
+                print("-> [API OK]")
             elif resp.status_code == 401:
-                print("-> [API FAIL] ❌ (Unauthorized)")
+                print("-> [API FAIL] (Unauthorized)")
             else:
-                print(f"-> [API FAIL] ❌ (Status: {resp.status_code})")
+                print(f"-> [API FAIL] (Status: {resp.status_code})")
         except Exception as e:
-             print(f"-> [API FAIL] ❌ ({e})")
+             print(f"-> [API FAIL] ({e})")
     
     print("----------------------------------\n")
 

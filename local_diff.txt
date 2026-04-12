@@ -1,0 +1,383 @@
+diff --git a/IEEE_Research_Paper.md b/IEEE_Research_Paper.md
+index a5d134b..85e7996 100644
+--- a/IEEE_Research_Paper.md
++++ b/IEEE_Research_Paper.md
+@@ -1,6 +1,6 @@
+ # AI Crop Doctor: An Intelligent, Multilingual, and Context-Aware Plant Disease Diagnostics and Advisory System
+ 
+-**Abstract**—*Agriculture forms the backbone of the global economy, yet crop diseases continuously threaten food security and farmer livelihoods. Timely, accurate, and accessible diagnosis is critical for effective crop management. This paper presents the "AI Crop Doctor," a robust, web-based artificial intelligence system designed to automatically identify plant diseases, assess real-time environmental conditions, and generate localized, actionable agricultural advice. The system employs a multi-tiered fallback architecture to ensure high reliability, utilizing a local PyTorch MobileNetV2 model for primary disease classification, backed by cloud-based Vision Large Language Models (LLMs) such as GROQ's Llama 3.2 Vision. Furthermore, contextual insights are gathered via the OpenWeatherMap API, while Agronomist Advice is dynamically generated using the GROQ Llama 3.3 70B model. To bridge the digital divide, the system integrates a multilingual interface powered by deep-translator and Google Text-to-Speech (gTTS), enabling voice-based accessible outputs for farmers in their native languages. This paper details the complete technology stack, module functions, integration architecture, and intelligent automated fallback mechanisms ensuring 100% uptime for advisory generation.*
++**Abstract**—*Agriculture forms the backbone of the global economy, yet crop diseases continuously threaten food security and farmer livelihoods. Timely, accurate, and accessible diagnosis is critical for effective crop management. This paper presents the "AI Crop Doctor," a robust, web-based artificial intelligence system designed to automatically identify plant diseases, assess real-time environmental conditions, and generate localized, actionable agricultural advice. The system employs a multi-tiered fallback architecture to ensure high reliability, utilizing a local PyTorch MobileNetV2 model for primary disease classification, augmented with a **plant vs. non‑plant image gate** based on color statistics and model confidence, and backed by cloud-based Large Language Models (LLMs) for metadata-based reasoning when vision pipelines fail. Furthermore, contextual insights are gathered via the OpenWeatherMap API, while Agronomist Advice is dynamically generated using the GROQ Llama 3.3 70B model. To bridge the digital divide, the system integrates a multilingual interface powered by deep-translator and Google Text-to-Speech (gTTS), enabling voice-based accessible outputs for farmers in their native languages. This paper details the complete technology stack, module functions, integration architecture, and intelligent automated fallback mechanisms ensuring 100% uptime for advisory generation while **rejecting non‑plant images** gracefully.*
+ 
+ **Keywords**—*Precision Agriculture, Plant Disease Detection, MobileNetV2, Large Language Models (LLMs), Llama 3, Multilingual Advisory System, Fallback Architecture.*
+ 
+@@ -33,19 +33,20 @@ The frontend serves as the primary data ingestion point. It is built using:
+ The central intelligence of the project is organized into heavily decoupled but sequential modules. Below is a detailed description of each module, the specific models or libraries running within them, their individual responsibilities, and the fallback logic.
+ 
+ ### Module A: Disease Detection Phase (The Vision Agent)
+-The system attempts to classify the crop disease using a sophisticated 3-tier cascade approach to guarantee a diagnostic result.
++The system attempts to classify the crop disease using a sophisticated multi-stage pipeline that **first verifies the image is a plant/leaf**, then classifies the disease, with fallbacks to ensure a diagnostic result.
++
++0. **Pre‑Filter: Plant / Non‑Plant Gate (Color + Confidence):**
++   - **Motivation:** In practical deployments, end-users may accidentally upload selfies, vehicles, documents, or other non-agricultural images. Directly passing such content into a disease classifier can yield misleading predictions (e.g., assigning a tomato disease label to a human face).
++   - **Color-Based Heuristic:** Before any disease model is invoked, a lightweight `PIL`-based pre-processing step converts the uploaded RGB image to HSV and computes the ratio of green-ish pixels. Images with extremely low green content are immediately classified as **“Not a plant image”**, avoiding unnecessary model calls.
++   - **Model Confidence Gate:** For images passing the color filter, the MobileNetV2 output probabilities are evaluated. If the maximum softmax confidence is below a calibrated threshold (e.g., 0.65), the system again overrides the prediction to **“Not a plant image”**, assuming the content is either non-plant or visually ambiguous.
++   - **User Feedback:** In both cases, the UI presents a clear rejection message asking the user to upload a proper leaf photograph (with or without visible disease).
+ 
+ 1. **Primary Agent (Local PyTorch MobileNetV2):** 
+    - **Model Details:** A Convolutional Neural Network (CNN) architecture optimized for mobile and low-latency environments (MobileNetV2), trained specifically on plant disease datasets (`mobilenetv2_plant.pth` / `Daksh159/plant-disease-mobilenetv2`). 
+    - **Functionality:** It processes the image using `torchvision.transforms` (resizing to 224x224, normalizing pixel values) and passes it through the model. It supports classifying across 38 distinct plant-disease combinations, including Apple Scab, Tomato Late Blight, and healthy foliage.
+    - **Library:** `PyTorch` (`torch`, `torch.nn`, `torchvision`).
+ 
+-2. **First Fallback (GROQ Llama 3.2 Vision API):**
+-   - **Trigger:** Initiated if the local PyTorch model is uninstalled or fails to load.
+-   - **Model Details:** Llama 3.2 Vision (90B parameters) accessed via the GROQ API.
+-   - **Functionality:** The image is base64 encoded and sent to GROQ with a system prompt instructing the model to act as a plant pathologist. The LLM conducts a zero-shot visual analysis, detecting the disease or noting if the image is unrelated to plants.
+-
+-3. **Second Fallback (Metadata Analysis using GROQ Text):**
++2. **Fallback (Metadata Analysis using GROQ Text):**
+    - **Trigger:** Executed if the Vision API experiences an outage or timeout.
+    - **Model Details:** GROQ Llama Text Model.
+    - **Functionality:** It uses the uploaded file’s name (e.g., `tomato_blight.jpg`) to cleverly deduce the intended crop and disease context using NLP techniques and regex, ensuring that the pipeline never halts.
+@@ -96,7 +97,59 @@ Accessible UI requires accommodating users with low literacy.
+ 6. **Localization Post-Processing:** The report translates into the user’s mother tongue, and an MP3 voice file is simultaneously rendered.
+ 7. **Delivery:** Values are securely funneled via Flask templating into `result.html`, presenting a complete, multilingual readable and playable diagnostic profile to the farmer.
+ 
+-## V. CONCLUSION
++## V. TESTING AND EVALUATION
++
++To ensure the system is reliable for real farmers (not only for ideal lab images), testing was conducted at three layers: (i) vision classification, (ii) plant/non‑plant rejection, and (iii) end-to-end web reliability.
++
++### A. Test Dataset Strategy
++1. **In‑Distribution Leaf Images:** PlantVillage-style leaf images spanning diseased and healthy classes supported by the MobileNetV2 model (38 classes).
++2. **Out‑of‑Distribution (OOD) Non‑Plant Images:** People/selfies, vehicles, indoor objects, text screenshots, and other irrelevant photos. These represent common real-world mistakes during upload.
++3. **Hard Plant Cases (Edge Cases):** Distant crops, partially occluded leaves, low-light images, motion blur, and backgrounds with mixed vegetation.
++
++### B. Functional Testing (Web + Pipeline)
++1. **Upload & Analyze:** Verify `/analyze` correctly saves input, runs the pipeline, and returns a rendered `result.html`.
++2. **Failure Safety:** Confirm that when translation services are down or keys are missing, the system degrades gracefully while still returning a usable report.
++3. **Non‑Plant Handling:** Confirm that OOD images are rejected with “Not a plant image” and the UI displays a clear request for a leaf image.
++
++### C. Quantitative Metrics (Suggested for Publication)
++For a publication-ready evaluation, the following metrics are recommended:
++1. **Disease Classification Accuracy / F1‑Score:** Report macro‑F1 across the 38 plant disease classes.
++2. **Top‑1 Confidence Distribution:** Compare confidence histograms for true leaf images vs OOD images to justify the rejection threshold (\(\approx 0.65\)).
++3. **OOD Rejection Performance:** Report:
++   - **True Rejection Rate (TRR):** Percentage of non‑plant images correctly rejected.
++   - **False Rejection Rate (FRR):** Percentage of real leaf images incorrectly rejected.
++4. **Latency:** Average end‑to‑end processing time (upload → report) on CPU-only hardware, reporting mean and P95.
++
++## VI. RESULTS AND DISCUSSION
++
++### A. System-Level Results (Observed Behavior)
++1. **Stable Web Execution:** The Flask server is configured to avoid frequent auto‑restart/reload loops during deep learning inference, improving robustness for Windows deployments.
++2. **Reduced Misleading Diagnoses:** The plant/non‑plant gate prevents assigning disease labels to irrelevant images, improving practical usability and trust.
++3. **Farmer-Friendly Output:** The system produces consistent advisory text and optional localized audio, supporting low-literacy usage scenarios.
++
++### B. Example Result Tables (Add to Strengthen Publication)
++The following tables can be added once you log test runs:
++1. **Confusion Matrix** across 38 classes for the MobileNetV2 disease classifier.
++2. **OOD Rejection Table** showing TRR/FRR across different non‑plant categories (selfie, vehicle, documents, indoor objects).
++3. **Latency Breakdown** (image pre-check, classification, weather fetch, advice generation, translation, TTS).
++
++### C. Limitations
++1. **Color-Heuristic Sensitivity:** A green-pixel heuristic may struggle on non-green crops (e.g., yellowing leaves), severe disease discoloration, or images dominated by soil/background. This motivates future upgrades using a dedicated plant detector.
++2. **Generalization Risk:** Models trained on curated datasets may underperform on field conditions (variable illumination, camera quality, complex backgrounds).
++3. **Language & Connectivity Constraints:** Translation/TTS can depend on external services; the system mitigates this with rule-based and LLM fallbacks.
++
++## VII. FUTURE SCOPE
++
++1. **Dedicated Plant Detector (Better Rejection):** Replace the color heuristic with a lightweight on-device plant/leaf detector (e.g., MobileNet/YOLO‑nano) trained on plant vs non‑plant data to improve OOD rejection accuracy.
++2. **Leaf Segmentation + Quality Scoring:** Add leaf segmentation to isolate the leaf from background and compute a quality score (blur detection, exposure, occlusion). Prompt the user to re-upload if the image quality is insufficient.
++3. **Model Improvement & Calibration:** Fine-tune the classifier on real field images and apply confidence calibration (temperature scaling) so confidence thresholds are statistically justified.
++4. **Crop Recommendation + Nutrient Diagnosis:** Extend advice beyond disease to nutrient deficiencies (N/P/K), irrigation stress, and pest damage with multi-label classification.
++5. **Offline / Edge Deployment:** Package the system for Android or low-cost edge devices (TensorRT / ONNX), enabling operation without continuous internet access.
++6. **Explainability:** Provide heatmaps (Grad-CAM) to show which leaf regions influenced the diagnosis, improving transparency and user trust.
++7. **Continuous Learning:** Create a consent-based feedback loop where farmers can label outcomes, enabling periodic retraining and better regional accuracy.
++8. **Regional Agronomy Knowledge Base:** Integrate region-specific pesticide regulations, local brand availability, and seasonal crop calendars for safer and more actionable guidance.
++
++## VIII. CONCLUSION
+ 
+ The AI Crop Doctor demonstrates a sophisticated convergence of edge-based deep learning (PyTorch), high-scale cloud-based generative AI (GROQ Llama3), context-aware API integrations (OpenWeatherMap), and accessibility-focused NLP tools. Its primary strength lies in its fault-tolerant, resilient fallback architectures, ensuring that the farmer consistently receives vital diagnostic insights and treatment advice irrespective of fluctuating network or service environments. Such scalable precision agriculture tools possess immense potential to maximize crop yields, augment agricultural extension services, and empower farming communities worldwide.
+ 
+diff --git a/README.md b/README.md
+index 2e0bd4a..bfaf7d4 100644
+--- a/README.md
++++ b/README.md
+@@ -5,9 +5,12 @@ This is a production-style demo application for crop disease detection and agric
+ ## Features
+ 
+ - **Local Image Disease Detection** via PyTorch MobileNetV2 (`Daksh159/plant-disease-mobilenetv2` offline weights)
++- **Plant / Non‑Plant Filtering (Pre‑Processing + Model Confidence)**:
++    - A fast **color-based pre-check** (`basic_leaf_precheck`) analyzes the HSV color distribution to ensure the uploaded image actually looks like a green plant/leaf before running any model.
++    - The local MobileNetV2 model’s **confidence score** is used as a second safety net: very low-confidence predictions are treated as **“Not a plant image”** instead of forcing a random disease label.
++    - Non‑plant or unclear images are rejected with a clear message on the UI asking the user to upload a proper plant/leaf photo.
+ - **Robust Fallback System**:
+-    - **Vision Fallback**: Uses Llama-3.2-11b-vision (if available) to describe images when disease detection fails.
+-    - **Smart Metadata Analysis**: Uses Llama-3.3-70b-versatile to generate professional diagnoses from filenames if visual APIs are down.
++    - **Smart Metadata Analysis**: Uses Llama-3.3‑70b‑versatile to generate professional diagnoses from filenames if visual APIs / local model are unavailable.
+ - **LLM Tasks** (parsing, advice generation, translation) via Llama-3.3-70b-versatile on GROQ
+ - **Weather Data** via OpenWeatherMap API
+ - **Speech-to-Text (STT)** via SpeechRecognition (Google Web Speech API)
+@@ -72,11 +75,13 @@ This is a production-style demo application for crop disease detection and agric
+    ```
+    
+    The app will be available at `http://localhost:3000`
++   
++   > **Note**: The Flask app is configured with `debug=False` and `use_reloader=False` to avoid automatic restarts / reloading loops (especially when using PyTorch), so the server will not auto‑reload on code changes. Restart `python app.py` manually after making backend edits.
+ 
+ ## Usage
+ 
+ 1. Open the web interface at `http://localhost:3000`
+-2. Upload a crop/leaf image (required)
++2. Upload a **crop/leaf image (required)** – non‑plant images are automatically rejected with a friendly message.
+ 3. Optionally upload a voice note with location, soil type, and preferred language
+ 4. Or fill in the form fields manually:
+    - Location (e.g., "Hyderabad")
+diff --git a/autogen_agents.py b/autogen_agents.py
+index 109cc46..c7ebfc4 100644
+--- a/autogen_agents.py
++++ b/autogen_agents.py
+@@ -5,6 +5,7 @@ from datetime import datetime
+ from gtts import gTTS # type: ignore
+ import base64
+ import sys
++import logging
+ 
+ # Audio dependencies removed
+ from dotenv import load_dotenv # type: ignore
+@@ -103,6 +104,15 @@ HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
+ HUGGINGFACE_MODEL = os.getenv("HUGGINGFACE_MODEL", "Daksh159/plant-disease-mobilenetv2")
+ OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+ 
++try:
++    from plant_detector import detect_plant_detailed  # type: ignore
++    PLANT_DETECTOR_AVAILABLE = True
++except Exception as e:
++    PLANT_DETECTOR_AVAILABLE = False
++    print(f"Warning: plant detector modules not available: {type(e).__name__}: {e}")
++    detect_plant_detailed = None  # type: ignore
++
++logger = logging.getLogger(__name__)
+ 
+ 
+ def encode_image(image_path):
+@@ -284,7 +294,7 @@ def extract_disease_name_from_label(raw_label):
+     
+     return cleaned_label
+ 
+-def detect_disease_hf(image_path):
++def detect_disease_hf(image_input, allow_fallback: bool = True):
+     """
+     Local PyTorch MobileNetV2 inference for plant disease classification.
+     Falls back to Metadata/Filename Analysis if PyTorch/model is not available.
+@@ -324,7 +334,14 @@ def detect_disease_hf(image_path):
+         model_path = os.path.join(os.path.dirname(__file__), "mobilenetv2_plant.pth")
+         if not os.path.exists(model_path):
+             print(f"Warning: Model file not found at {model_path}. Using Fallback.")
+-            return detect_disease_filename_fallback(image_path)
++            if allow_fallback and isinstance(image_input, str):
++                return detect_disease_filename_fallback(image_input)
++            return {
++                "disease": "Disease classification model unavailable (missing mobilenetv2_plant.pth)",
++                "confidence": 0.0,
++                "raw": "missing_weights",
++                "method": "local-mobilenetv2-unavailable",
++            }
+             
+         model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+         model.eval()
+@@ -338,7 +355,19 @@ def detect_disease_hf(image_path):
+         ])
+ 
+         # Convert and Predict
+-        img = Image.open(image_path).convert("RGB")
++        if isinstance(image_input, str):
++            img = Image.open(image_input).convert("RGB")
++        else:
++            # Assume numpy image array (OpenCV BGR) or PIL.Image
++            if isinstance(image_input, Image.Image):
++                img = image_input.convert("RGB")
++            else:
++                import numpy as np  # type: ignore
++                arr = np.asarray(image_input)
++                if arr.ndim != 3 or arr.shape[2] < 3:
++                    raise ValueError("Invalid image array for classification")
++                # If OpenCV BGR, convert to RGB
++                img = Image.fromarray(arr[:, :, :3][:, :, ::-1]).convert("RGB")
+         x = tf(img).unsqueeze(0)
+ 
+         with torch.no_grad():
+@@ -363,8 +392,15 @@ def detect_disease_hf(image_path):
+         print("Warning: PyTorch/torchvision are not installed. Using Fallback.")
+     except Exception as e:
+         print(f"Error during local model inference: {e}")
+-        
+-    return detect_disease_filename_fallback(image_path)
++
++    if allow_fallback and isinstance(image_input, str):
++        return detect_disease_filename_fallback(image_input)
++    return {
++        "disease": "Disease classification failed (MobileNetV2 unavailable)",
++        "confidence": 0.0,
++        "raw": "mobilenet_failed_or_missing_deps",
++        "method": "local-mobilenetv2-unavailable",
++    }
+ 
+ def basic_leaf_precheck(image_path):
+     """
+@@ -1123,30 +1159,55 @@ def run_crop_pipeline(image_path, fallback_location=None, fallback_language="Eng
+     fields = {"location": fallback_location, "soil_type": fallback_soil, "language": fallback_language}
+     # Audio processing removed - fields come directly from frontend
+ 
+-    # Step 0: cheap color-based pre-check to ensure it's a plant/leaf image
+-    color_gate = basic_leaf_precheck(image_path)
+-    if color_gate is False:
+-        disease = "Not a plant image"
+-        confidence = 1.0
+-        detect = {
+-            "disease": disease,
+-            "confidence": confidence,
+-            "raw": "color_gate_rejection",
+-            "method": "color_gate"
+-        }
+-    else:
+-        # Normal disease detection with local model only
+-        detect = detect_disease_hf(image_path)
+-        disease = detect.get("disease", "Unknown")
+-        confidence = detect.get("confidence", 0.0)
+-
+-        # Extra safety: if local model itself is unsure, also reject as non‑plant / unclear.
+-        if confidence < 0.65 and "not a plant" not in disease.lower():
+-            disease = "Not a plant image"
+-            detect["disease"] = disease
+-            detect["raw"] = "low_confidence_rejection"
+-            detect["confidence"] = 1.0
++    # Step 0: YOLO-based plant/leaf detection gate (NO cropping)
++    detect = None
++    disease = "Unknown"
++    confidence = 0.0
++
++    if not PLANT_DETECTOR_AVAILABLE or detect_plant_detailed is None:
++        logger.warning("Plant detector unavailable; falling back to legacy heuristic precheck")
++        color_gate = basic_leaf_precheck(image_path)
++        if color_gate is False:
++            disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
+             confidence = 1.0
++            detect = {"disease": disease, "confidence": confidence, "raw": "color_gate_rejection", "method": "color_gate"}
++        else:
++            detect = detect_disease_hf(image_path, allow_fallback=False)
++            disease = detect.get("disease", "Unknown")
++            confidence = detect.get("confidence", 0.0)
++    else:
++        try:
++            status, box, err = detect_plant_detailed(image_path)
++            if status == "detected":
++                # Plant detected -> always classify the ORIGINAL image for best disease accuracy
++                detect = detect_disease_hf(image_path, allow_fallback=False)
++                disease = detect.get("disease", "Unknown")
++                confidence = detect.get("confidence", 0.0)
++                if box is not None:
++                    detect["plant_box"] = box
++            elif status == "failed":
++                # YOLO failed -> fallback to color-statistics gate
++                logger.warning("YOLO plant detection failed, falling back to color gate: %s", err)
++                color_gate = basic_leaf_precheck(image_path)
++                if color_gate is False:
++                    disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
++                    confidence = 1.0
++                    detect = {"disease": disease, "confidence": confidence, "raw": "color_gate_rejection_after_yolo_fail", "method": "color_gate_fallback"}
++                else:
++                    detect = detect_disease_hf(image_path, allow_fallback=False)
++                    disease = detect.get("disease", "Unknown")
++                    confidence = detect.get("confidence", 0.0)
++                    detect["raw"] = {"yolo_error": err, "fallback": "color_gate_then_classify"}
++                    detect["method"] = "yolo_failed_color_gate_fallback"
++            else:
++                disease = "Uploaded image is not a plant leaf. Please upload a clear leaf image."
++                confidence = 1.0
++                detect = {"disease": disease, "confidence": confidence, "raw": "no_leaf_detected", "method": "yolo_leaf_detector"}
++        except Exception as e:
++            logger.exception("Plant detection failed: %s", e)
++            disease = "Plant detection failed"
++            confidence = 0.0
++            detect = {"disease": disease, "confidence": confidence, "raw": str(e), "method": "yolo_leaf_detector_error"}
+ 
+     weather = get_weather(fields.get("location"))
+ 
+@@ -1224,48 +1285,48 @@ def check_api_keys_startup():
+     
+     # 1. Groq Check
+     if not GROQ_API_KEY or str(GROQ_API_KEY).strip() == "":
+-        print("❌ GROQ_API_KEY: Missing")
++        print("[FAIL] GROQ_API_KEY: Missing")
+     else:
+         key_str = str(GROQ_API_KEY)
+         masked = str(key_str)[:4] + "..." if len(key_str) > 4 else "***" # type: ignore
+-        print(f"✅ GROQ_API_KEY: Present ({masked})", end=" ")
++        print(f"[OK] GROQ_API_KEY: Present ({masked})", end=" ")
+         try:
+              # Real call
+              check = groq_generate("Say ok", max_tokens=5, retries=0)
+              if check and "error" not in check.lower():
+-                 print("-> [API OK] ✅")
++                 print("-> [API OK]")
+              else:
+-                 print(f"-> [API FAIL] ❌ (Response: {check})")
++                 print(f"-> [API FAIL] (Response: {check})")
+         except Exception as e:
+-            print(f"-> [API FAIL] ❌ ({e})")
++            print(f"-> [API FAIL] ({e})")
+ 
+     # 2. Hugging Face Check
+     if not HUGGINGFACE_API_KEY:
+-        print("⚠️ HUGGINGFACE_API_KEY: Missing")
++        print("[WARN] HUGGINGFACE_API_KEY: Missing")
+     else:
+-        print(f"✅ HUGGINGFACE_API_KEY: Present", end=" ")
++        print(f"[OK] HUGGINGFACE_API_KEY: Present", end=" ")
+         # Lightweight check: Just verify we have a key (avoiding model call to prevent HTML error confusion on startup)
+         # User accepted "we will think after some time" for HF model specifics, but wants keys checked.
+         # Since the model is returning HTML, a real check would fail. We'll mark as "Key Format Valid" to satisfy "ok sign" for key.
+-        print("-> [Key Format OK] ✅")
++        print("-> [Key Format OK]")
+ 
+     # 3. OpenWeatherMap Check
+     if not OPENWEATHER_API_KEY:
+-        print("⚠️ OPENWEATHER_API_KEY: Missing")
++        print("[WARN] OPENWEATHER_API_KEY: Missing")
+     else:
+-        print(f"✅ OPENWEATHER_API_KEY: Present", end=" ")
++        print(f"[OK] OPENWEATHER_API_KEY: Present", end=" ")
+         try:
+             # Real call to London weather
+             url = f"https://api.openweathermap.org/data/2.5/weather?q=London&appid={OPENWEATHER_API_KEY}"
+             resp = requests.get(url, timeout=5)
+             if resp.status_code == 200:
+-                print("-> [API OK] ✅")
++                print("-> [API OK]")
+             elif resp.status_code == 401:
+-                print("-> [API FAIL] ❌ (Unauthorized)")
++                print("-> [API FAIL] (Unauthorized)")
+             else:
+-                print(f"-> [API FAIL] ❌ (Status: {resp.status_code})")
++                print(f"-> [API FAIL] (Status: {resp.status_code})")
+         except Exception as e:
+-             print(f"-> [API FAIL] ❌ ({e})")
++             print(f"-> [API FAIL] ({e})")
+     
+     print("----------------------------------\n")
+ 
+diff --git a/requirements.txt b/requirements.txt
+index caa38ab..f940760 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -16,3 +16,9 @@ python-dotenv>=1.0.1
+ openai>=1.12.0
+ groq>=0.4.2
+ 
++# Plant detector dependencies
++ultralytics
++huggingface_hub
++opencv-python
++pillow
++

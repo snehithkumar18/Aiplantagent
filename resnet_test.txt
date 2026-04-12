@@ -1,0 +1,5 @@
+Girl 1: ['cloak', 'fur coat', 'wig']
+Girl 2: ['fur coat', 'gown', 'bath towel']
+Cat: ['American chameleon', 'green lizard', 'vine snake']
+Apple rust: ['African chameleon', 'hip', 'kimono']
+Tomato blight: ['African chameleon', 'custard apple', 'guacamole']

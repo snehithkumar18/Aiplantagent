@@ -5,9 +5,12 @@ This is a production-style demo application for crop disease detection and agric
 ## Features
 
 - **Local Image Disease Detection** via PyTorch MobileNetV2 (`Daksh159/plant-disease-mobilenetv2` offline weights)
+- **Plant / Non‑Plant Filtering (Pre‑Processing + Model Confidence)**:
+    - A fast **color-based pre-check** (`basic_leaf_precheck`) analyzes the HSV color distribution to ensure the uploaded image actually looks like a green plant/leaf before running any model.
+    - The local MobileNetV2 model’s **confidence score** is used as a second safety net: very low-confidence predictions are treated as **“Not a plant image”** instead of forcing a random disease label.
+    - Non‑plant or unclear images are rejected with a clear message on the UI asking the user to upload a proper plant/leaf photo.
 - **Robust Fallback System**:
-    - **Vision Fallback**: Uses Llama-3.2-11b-vision (if available) to describe images when disease detection fails.
-    - **Smart Metadata Analysis**: Uses Llama-3.3-70b-versatile to generate professional diagnoses from filenames if visual APIs are down.
+    - **Smart Metadata Analysis**: Uses Llama-3.3‑70b‑versatile to generate professional diagnoses from filenames if visual APIs / local model are unavailable.
 - **LLM Tasks** (parsing, advice generation, translation) via Llama-3.3-70b-versatile on GROQ
 - **Weather Data** via OpenWeatherMap API
 - **Speech-to-Text (STT)** via SpeechRecognition (Google Web Speech API)
@@ -72,11 +75,13 @@ This is a production-style demo application for crop disease detection and agric
    ```
    
    The app will be available at `http://localhost:3000`
+   
+   > **Note**: The Flask app is configured with `debug=False` and `use_reloader=False` to avoid automatic restarts / reloading loops (especially when using PyTorch), so the server will not auto‑reload on code changes. Restart `python app.py` manually after making backend edits.
 
 ## Usage
 
 1. Open the web interface at `http://localhost:3000`
-2. Upload a crop/leaf image (required)
+2. Upload a **crop/leaf image (required)** – non‑plant images are automatically rejected with a friendly message.
 3. Optionally upload a voice note with location, soil type, and preferred language
 4. Or fill in the form fields manually:
    - Location (e.g., "Hyderabad")

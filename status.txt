@@ -1,0 +1,30 @@
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   IEEE_Research_Paper.md
+	modified:   README.md
+	modified:   autogen_agents.py
+	modified:   requirements.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	confidence_results.txt
+	confidence_test.txt
+	diff.txt
+	image_utils.py
+	models/
+	models_output.txt
+	plant_detector.py
+	plant_detector_model.py
+	resnet_test.txt
+	status.txt
+	test_images.py
+	test_models.py
+	test_resnet.py
+	test_results.txt
+	test_vision.py
+
+no changes added to commit (use "git add" and/or "git commit -a")
