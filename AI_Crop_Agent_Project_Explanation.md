@@ -62,9 +62,11 @@ This is where the "agents" (specialized functions) work together. The pipeline c
 
 #### Module A: Disease Detection Phase
 The system attempts to figure out what is wrong with the plant using a multi-layered fallback approach to guarantee an answer:
-1. **Primary Agent (Local/HF Model):** The function `detect_disease_hf` tries to analyze the image using PyTorch (MobileNetV2 model `Daksh159/plant-disease-mobilenetv2`). 
-2. **First Fallback (Vision AI):** If the primary model fails, the system calls `detect_disease_with_groq_fallback()`. It sends the image to the **GROQ Llama 3.2 Vision Model**. The AI looks at the image and returns a description or disease name.
-3. **Double Fallback (Metadata Analysis):** If the Vision API is completely down, `detect_disease_filename_fallback()` takes over. It uses the Groq text model to intelligently guess the disease based purely on the uploaded file's *name* (e.g., if the user uploaded `tomato_blight_01.jpg`, it deduces "Tomato Blight").
+1. **The Gatekeeper (YOLOv8):** Before any diagnosis, the system checks if a plant is actually present. If the YOLO model doesn't find a plant with high confidence, it immediately rejects the image as "Not a Plant."
+2. **The Zoom-in (Adaptive ROI Crop):** Once a plant is found, the system "cuts out" just the leaf, adding a 5% margin to ensure no symptoms are lost. This removes distracting background noise like soil or sky.
+3. **The Pathologist (MobileNetV2):** This primary agent analyzes the "zoomed-in" leaf image to classify the disease from a list of 38 categories.
+4. **First Fallback (Vision AI):** If the primary model fails, the system calls `detect_disease_with_groq_fallback()`. It sends the image to the **GROQ Llama 3.2 Vision Model**.
+5. **Double Fallback (Metadata Analysis):** If the Vision API is completely down, the system guesses the disease based on the uploaded file's name (e.g., `tomato_blight.jpg`).
 
 #### Module B: Context Gathering (Weather)
 1. The `get_weather()` function uses the user's provided Location.

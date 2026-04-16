@@ -60,6 +60,23 @@ To understand how the "Objectness" score is actually calculated, consider this r
 2.  **The 5% Safety Buffer:** The system adds a small padding around the box to ensure that if a disease is eating the very edge of the leaf, those symptoms are not cut out.
 3.  **The Final Extraction:** This high-density "Zoom-in" image is then fed to the MobileNetV2 pathologist. By removing the background (soil, hands, sky), we ensure the AI focuses 100% of its attention on the leaf texture, significantly reducing false diagnoses.
 
+#### Mathematical Breakdown of the Adaptive ROI Crop:
+To ensure the model receives the highest "Signal-to-Noise" ratio, the system calculates the expanded crop coordinates using a 5% safety margin:
+1. **Initial Detection:** YOLO outputs $B = [x_1, y_1, x_2, y_2]$.
+2. **Dimension Calculation:** 
+   - Width $\Delta w = x_2 - x_1$
+   - Height $\Delta h = y_2 - y_1$
+3. **Padding Factor ($P$):** Set to $0.05$ (5%).
+   - Horizontal Padding $P_w = \text{int}(\Delta w \times 0.05)$
+   - Vertical Padding $P_h = \text{int}(\Delta h \times 0.05)$
+4. **Final ROI Coordinates ($B_{final}$):**
+   - $x_{start} = \max(0, x_1 - P_w)$
+   - $y_{start} = \max(0, y_1 - P_h)$
+   - $x_{end} = \min(W_{img}, x_2 + P_w)$
+   - $y_{end} = \min(H_{img}, y_2 + P_h)$
+   
+This ensures that peripheral symptoms (like leaf-edge burning) are preserved for the classifier.
+
 ---
 
 5.  **Rejection Case:** If a user uploads a blurry or irrelevant photo where the model confidence is low (e.g., 20%), the system **Rejects** it as a "Non-Plant" image to maintain diagnostic integrity.

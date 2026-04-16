@@ -23,11 +23,16 @@ The project employs a modular, agent-based architecture where specialized functi
 ### Data Flow & Processing Steps:
 1. **Input Collection:** The frontend (HTML/CSS/Vanilla JS) captures the user's image upload. Using the Web Speech API, it allows users to dictate their location, soil type, and preferred language. The data is packaged and sent to the Flask backend via an HTTP POST request.
 2. **Analysis Pipeline Initiation:** The Flask (`app.py`) server receives the data, saves the image temporarily, and invokes the central processing orchestrator (`run_crop_pipeline()` in `autogen_agents.py`).
-3. **Vision & Classification:** The image is passed to the Disease Detection module. It attempts local inference using a PyTorch MobileNetV2 model. If unavailable, it falls back to a remote Large Vision Model (GROQ Llama 3.2 Vision), and finally to a text-based hallucination/metadata extraction fallback ensuring no system crash blocks the pipeline.
-4. **Context Gathering:** The location data is sent to the OpenWeatherMap API to fetch real-time temperature and humidity.
-5. **Reasoning & Advice Generation:** The detected disease, weather data, and soil type are fed into an LLM (GROQ Llama 3.3 70B). The LLM is prompted to act as an expert agronomist, generating a diagnosis summary, treatment steps, preventive measures, and predicting future risks based on the weather.
-6. **Localization (Translation & TTS):** The generated English advice is passed to a Translation module (attempting Google Cloud Translate, deep-translator, or GROQ LLM). The translated text is then converted into an MP3 file using Google Text-to-Speech (gTTS).
-7. **Output Rendering:** The aggregated data (Disease, Confidence, Weather, Dual-Language Advice, and Audio URL) is returned to the Flask server, which renders it beautifully on the `result.html` dashboard.
+3. **Phase 1: Validation & Localization:** The image is first processed by the **YOLOv8 Gatekeeper**, which detects the presence of a plant leaf and calculates the precise bounding box (ROI). If no plant is detected with >50% confidence, the image is rejected.
+4. **Phase 1.5: ROI Zoom-in:** Using the coordinates from YOLO, the system performs an **Adaptive ROI Crop** with a 5% safety buffer. This removes background noise and isolates the leaf for maximum signal.
+5. **Phase 2: Disease Classification:** The system attempts to figure out what is wrong with the plant using a multi-layered fallback approach to guarantee an answer:
+    1. **The Pathologist (MobileNetV2):** This primary agent analyzes the "zoomed-in" leaf image to classify the disease from a list of 38 categories.
+    2. **First Fallback (Vision AI):** If the primary model fails, the system calls `detect_disease_with_groq_fallback()`. It sends the image to the **GROQ Llama 3.2 Vision Model**.
+    3. **Double Fallback (Metadata Analysis):** If the Vision API is completely down, the system guesses the disease based on the uploaded file's name (e.g., `tomato_blight.jpg`).
+6. **Context Gathering:** The location data is sent to the OpenWeatherMap API to fetch real-time temperature and humidity.
+7. **Reasoning & Advice Generation:** The detected disease, weather data, and soil type are fed into an LLM (GROQ Llama 3.3 70B). The LLM is prompted to act as an expert agronomist, generating a diagnosis summary, treatment steps, preventive measures, and predicting future risks based on the weather.
+8. **Localization (Translation & TTS):** The generated English advice is passed to a Translation module (attempting Google Cloud Translate, deep-translator, or GROQ LLM). The translated text is then converted into an MP3 file using Google Text-to-Speech (gTTS).
+9. **Output Rendering:** The aggregated data (Disease, Confidence, Weather, Dual-Language Advice, and Audio URL) is returned to the Flask server, which renders it beautifully on the `result.html` dashboard.
 
 ---
 
@@ -48,9 +53,11 @@ The project employs a modular, agent-based architecture where specialized functi
        v         |
 [ Pipeline Orchestrator (`autogen_agents.py`) ]
        |
-       +---> [ Vision Agent ] ---> PyTorch MobileNetV2 [Primary]
-       |                      ---> GROQ Vision API [Fallback 1]
-       |                      ---> Metadata Analyzer [Fallback 2]
+        +---> [ Vision Agent ] ---> YOLOv8 Gatekeeper [Validation]
+        |                      ---> Adaptive ROI Crop [Zoom-in]
+        |                      ---> PyTorch MobileNetV2 [Classification]
+        |                      ---> GROQ Vision API [Fallback 1]
+        |                      ---> Metadata Analyzer [Fallback 2]
        |
        +---> [ Weather Agent ] ---> OpenWeatherMap API
        |
