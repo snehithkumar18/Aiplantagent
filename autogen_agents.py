@@ -333,15 +333,27 @@ def detect_disease_hf(image_input, allow_fallback: bool = True):
         # Load weights
         model_path = os.path.join(os.path.dirname(__file__), "mobilenetv2_plant.pth")
         if not os.path.exists(model_path):
-            print(f"Warning: Model file not found at {model_path}. Using Fallback.")
-            if allow_fallback and isinstance(image_input, str):
-                return detect_disease_filename_fallback(image_input)
-            return {
-                "disease": "Disease classification model unavailable (missing mobilenetv2_plant.pth)",
-                "confidence": 0.0,
-                "raw": "missing_weights",
-                "method": "local-mobilenetv2-unavailable",
-            }
+            print(f"Warning: Primary model file not found at {model_path}. Trying Secondary Local Fallback...")
+            try:
+                from disease_model_secondary import predict_secondary
+                raw_label, confidence = predict_secondary(image_input)
+                disease_name = extract_disease_name_from_label(raw_label.replace("___", " - ").replace("_", " "))
+                return {
+                    "disease": disease_name,
+                    "confidence": round(confidence, 4),
+                    "raw": raw_label,
+                    "model_used": "local-resnet50-fallback"
+                }
+            except Exception as sec_err:
+                print(f"Secondary local fallback also failed: {sec_err}")
+                if allow_fallback and isinstance(image_input, str):
+                    return detect_disease_filename_fallback(image_input)
+                return {
+                    "disease": "Disease classification model unavailable (all local models failed)",
+                    "confidence": 0.0,
+                    "raw": str(sec_err),
+                    "method": "all-local-unavailable",
+                }
             
         model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
         model.eval()
@@ -388,18 +400,28 @@ def detect_disease_hf(image_input, allow_fallback: bool = True):
             "model_used": "local-mobilenetv2"
         }
 
-    except ImportError:
-        print("Warning: PyTorch/torchvision are not installed. Using Fallback.")
     except Exception as e:
-        print(f"Error during local model inference: {e}")
+        print(f"Error during Primary local model inference: {e}. Trying Secondary Local Fallback...")
+        try:
+            from disease_model_secondary import predict_secondary
+            raw_label, confidence = predict_secondary(image_input)
+            disease_name = extract_disease_name_from_label(raw_label.replace("___", " - ").replace("_", " "))
+            return {
+                "disease": disease_name,
+                "confidence": round(confidence, 4),
+                "raw": raw_label,
+                "model_used": "local-resnet50-fallback-after-error"
+            }
+        except Exception as sec_err:
+            print(f"Secondary local fallback failed: {sec_err}")
 
     if allow_fallback and isinstance(image_input, str):
         return detect_disease_filename_fallback(image_input)
     return {
-        "disease": "Disease classification failed (MobileNetV2 unavailable)",
+        "disease": "Disease classification failed (All local models failed)",
         "confidence": 0.0,
-        "raw": "mobilenet_failed_or_missing_deps",
-        "method": "local-mobilenetv2-unavailable",
+        "raw": "all_local_failed",
+        "method": "all-local-unavailable",
     }
 
 def basic_leaf_precheck(image_path):

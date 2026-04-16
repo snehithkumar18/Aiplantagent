@@ -84,7 +84,7 @@ This ensures that peripheral symptoms (like leaf-edge burning) are preserved for
 ---
 
 ## 3. Phase 2: Multi-Tiered Disease Classification
-This is the "Brain" of the vision system, using four layers of redundancy.
+This is the "Brain" of the vision system, using **five layers of redundancy** to ensure an "unbreakable" diagnostic success rate.
 
 ### Tier 1: Local MobileNetV2 - The Pathologist (The Story of Disease Detection)
 **Architecture:** **MobileNetV2** (The "Digital Laboratory" for Plant Tissue)
@@ -110,18 +110,24 @@ After the "Jury" finishes voting, the model has raw scores for different disease
 3.  **Final Probability for Late Blight:** $181.2 / 190.9 = \mathbf{0.949}$ (or **95% Confidence**).
 4.  **The Logic:** Even though "Early Blight" had a positive score, the exponential power of "Late Blight" makes it the clear winner, ensuring the farmer gets a high-confidence diagnosis.
 
-### Tier 2: Cloud Inference Fallback
+### Tier 2: Local ResNet-50 - The Second Opinion (New Secondary Fallback)
+**Model:** **ResNet-50** (`SanketJadhav/PlantDiseaseClassifier-Resnet50`)
+- **Purpose:** To provide a redundant offline layer. If the MobileNetV2 weights are missing or the model fails to load, this heavy-duty ResNet-50 model takes over.
+- **Architecture:** Unlike MobileNet, ResNet uses **Residual Skip Connections**. If a layer cannot find a feature, the "Skip" allows information to flow around the block, maintaining a "gradient signal" even in deep networks.
+- **Function:** `predict_secondary()` in `disease_model_secondary.py`.
+
+### Tier 3: Cloud Inference Fallback
 - **Model:** `microsoft/resnet-50` or `akhaliq/plant-disease-classification`.
 - **API:** Hugging Face Inference API.
-- **Function:** `detect_disease_hf()` (API call variant) - Triggered if local PyTorch weights are missing.
+- **Function:** `detect_disease_hf()` (API call variant) - Triggered if all local models fail.
 
-### Tier 3: Vision Language Model (VLM)
+### Tier 4: Vision Language Model (VLM)
 - **Model:** **Llama 3.2 90B Vision**.
 - **API:** GROQ Cloud.
 - **Function:** `detect_disease_with_groq_fallback()` in `autogen_agents.py`.
-- **Function:** Instead of simple classification, the VLM "looks" at the image and describes the pathology in natural language.
+- **Logic:** Instead of simple classification, the VLM "looks" at the image and describes the pathology in natural language.
 
-### Tier 4: Knowledge Base Fallback
+### Tier 5: Knowledge Base Fallback
 - **Logic:** Uses a hardcoded agricultural expert system (dictionary) to provides standard treatment protocols when all neural inference layers fail.
 
 ---
