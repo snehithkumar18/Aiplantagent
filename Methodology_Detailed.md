@@ -47,20 +47,12 @@ To understand how the "Objectness" score is actually calculated, consider this r
 
 5.  **Function:** `detect_plant_detailed()` in `plant_detector.py`.
 
-### Model 2: HSV Color Heuristic - The Rapid Pre-Filter (The Story of Color Purity)
-**Method:** HSV (Hue, Saturation, Value) Color Space Analysis
+### Model 2: Model Confidence Gate - The Uncertainty Filter
+**Method:** Softmax Probability Analysis
 **The Internal Journey:**
-1.  **Step 1 (Color Space Shift):** Standard images are in RGB. However, shadows and sunlight can mess up RGB values. The system converts the image to **HSV**, which separates the "Hue" (the actual color) from the brightness.
-2.  **Step 2 (The Green-Band Filter):** The system scans every pixel to see if its Hue falls between **25 and 100 degrees**. This is the scientifically accepted "Green Band" for healthy and slightly yellowing vegetation.
-3.  **Step 3 (Density Check):** It filters further by ensuring the color isn't too washed out (Saturation > 60) or too dark (Value > 40).
-4.  **Step 4 (The Ratio Gate):** It counts every "Green" pixel and divides it by the total number of pixels in the image.
-
-#### Mathematical Example of the Green Ratio:
-Imagine a farmer uploads a photo where 1/4th of the frame is a leaf and the rest is a brown wooden table.
-1.  **Total Pixels:** 10,000 (thumbnail processing size).
-2.  **Green Pixels Counted:** 2,500 (pixels matching the 25-100 Hue range).
-3.  **Density Calculation:** $\frac{2,500}{10,000} = \mathbf{0.25}$ (or **25%**).
-4.  **Decision:** Because $0.25 > 0.10$ - **Why?** Acting as a lightweight "Gatekeeper", it rejects images with <10% green content as non-plants before expensive AI processing begins.
+1.  **Step 1 (Probability Extraction):** Once the YOLO detector passes the image, the MobileNetV2 path-way calculates the raw confidence score for the top predicted class.
+2.  **Step 2 (The Threshold Check):** If the maximum probability $\max(P_i)$ is below **0.65 (65%)**, the system assumes the image content is visually ambiguous or does not explicitly match any trained disease patterns.
+3.  **Step 3 (Rejection):** These ambiguous results are gracefully rejected before advisory generation occurs, prompting the user to upload a clearer, well-lit crop image.
 
 ### Phase 1.5: The ROI Zoom (The Story of Maximum Signal)
 **Purpose:** To isolate the plant from background noise to maximize classification accuracy.
@@ -70,7 +62,7 @@ Imagine a farmer uploads a photo where 1/4th of the frame is a leaf and the rest
 
 ---
 
-5.  **Rejection Case:** If a farmer accidentally uploads a photo of a blue tractor, the green count might be 50. $\frac{50}{10,000} = 0.005$ (0.5%). This is **Rejected** instantly, preventing a "hallucinated" disease diagnosis.
+5.  **Rejection Case:** If a user uploads a blurry or irrelevant photo where the model confidence is low (e.g., 20%), the system **Rejects** it as a "Non-Plant" image to maintain diagnostic integrity.
 
 ---
 
@@ -112,10 +104,8 @@ After the "Jury" finishes voting, the model has raw scores for different disease
 - **Function:** `detect_disease_with_groq_fallback()` in `autogen_agents.py`.
 - **Function:** Instead of simple classification, the VLM "looks" at the image and describes the pathology in natural language.
 
-### Tier 4: Metadata/Filename Reasoning (Last Resort)
-- **Model:** Llama 3.3 70B (Text).
-- **Function:** `detect_disease_filename_fallback()` in `autogen_agents.py`.
-- **Logic:** Uses NLP to extract clues from the filename (e.g., `tomato_blight_v1.jpg`) to provide an educated diagnosis when all vision layers fail.
+### Tier 4: Knowledge Base Fallback
+- **Logic:** Uses a hardcoded agricultural expert system (dictionary) to provides standard treatment protocols when all neural inference layers fail.
 
 ---
 
@@ -191,14 +181,14 @@ This ensures the advice is **Context-Aware**, not just a generic textbook answer
 | **Weather** | Requests | OpenWeatherMap |
 | **Translation** | Deep-Translator | Google Translate |
 | **Speech** | gTTS | Google TTS |
-| **Image Handling** | Pillow / OpenCV | HSV Logic / BGR Processing |
+| **Image Handling** | Pillow / OpenCV | Adaptive ROI / Confidence Gates |
 
 ---
 
 ## 8. Step-by-Step Flow (Input to Output)
 
 1. **User Uploads Image:** `app.py` receives the file.
-2. **Plant Detection:** YOLOv8 checks for a leaf. If not found, HSV logic checks for green content.
+2. **Plant Detection:** YOLOv8 checks for a leaf. If no spatial detections exceed the confidence gate, the image is rejected.
 3. **Disease Diagnosis:** Primary (MobileNetV2) classifies the disease with a confidence score.
 4. **Context Fetching:** System calls OpenWeather based on user location.
 5. **Prompt Engineering:** Diagnosis + Weather + Soil are combined into a prompt for Llama 3.3.
@@ -208,4 +198,24 @@ This ensures the advice is **Context-Aware**, not just a generic textbook answer
 9. **Final Delivery:** `result.html` renders all data, images, and audio.
 
 ---
+---
 *Created for Project Review Phase 3 - Prepared by AI Crop Agent System.*
+
+---
+
+## 9. Project Summary: The AI Crop Doctor Simply Explained
+*If you are looking for a quick understanding of what this project actually does, here it is in simple terms:*
+
+Imagine having a world-class agricultural expert in your pocket, available 24/7. That is exactly what the **AI Crop Doctor** is.
+
+### What does it do?
+When a farmer sees a sick plant, they can simply take a photo of the leaf using their phone. Our system then performs a 5-step analysis:
+1.  **Identifies the Plant:** It first makes sure there’s actually a plant in the photo (and not a random object) to prevent mistakes.
+2.  **Diagnoses the Disease:** Using advanced AI "Vision," it scans the leaf for tiny patterns to identify exactly what disease is attacking it (like spotting a specific type of fungus).
+3.  **Checks the Environment:** It automatically looks up the local weather (humidity and temperature) to understand if the conditions are making the disease spread faster.
+4.  **Provides Expert Advice:** It combines the diagnosis with the local weather and soil type to create a step-by-step treatment plan, including both natural remedies and specific medicines.
+5.  **Talks to the Farmer:** The system translates the entire report into the farmer's local language and can even **read it out loud**, making it accessible to everyone regardless of literacy or language.
+
+### Why is it special?
+It is built to be **unbreakable**. Most apps fail if they lose internet or if a single model makes a mistake. Our system has **three layers of fallback brains**. If one fails, another takes over instantly to ensure the farmer always gets the help they need. It’s not just an app; it’s a digital shield for a farmer's crop and livelihood.
+

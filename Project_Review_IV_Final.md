@@ -14,18 +14,23 @@ The system uses a **YOLO-based Gatekeeper** to reject non-plant images, a **Mobi
 ## 2. Objectives
 The project is built upon four foundational technical objectives:
 *   **Literacy-Agnostic Accessibility:** To provide voice-based (Text-to-Speech) inputs and outputs, ensuring farmers with limited literacy can interact with the AI in their native tongue.
-*   **System Resilience (100% Uptime):** To implement a tiered inference strategy where cloud APIs take over if local models fail, and rule-based logic takes over if APIs are down.
-*   **Environmental Contextualization:** To move beyond simple "image tagging" by integrating real-time weather and soil data to make treatments mathematically more accurate.
-*   **Data Integrity (OOD Rejection):** To eliminate "hallucinated" diagnoses by strictly rejecting non-agricultural images (selfies, vehicles, etc.) using a dual-gate (YOLO + HSV) system.
+*   **System Resilience (100% Uptime):** To implement a tiered inference strategy where primary local models fail over to cloud-based APIs to ensure 100% availability.
+*   **Environmental Contextualization:** To move beyond simple image tagging by integrating real-time weather and soil data to make treatments mathematically more accurate.
+*   **Data Integrity (OOD Rejection):** To eliminate "hallucinated" diagnoses by strictly rejecting non-agricultural images (selfies, vehicles, etc.) using a high-precision YOLO-based Gatekeeper.
+*   **High-Precision Disease Identification:** Supporting 38 distinct crop-disease combinations with optimized classification algorithms for unpredictable field conditions.
+*   **Proactive Risk Forecasting:** Utilizing real-time climatic vectors (humidity, temperature) to predict secondary disease outbreaks before they manifest visually.
+*   **Actionable Solution Synthesis (The 4-Pillar Report):** Moving beyond simple identification to deliver a complete Treatment, Prevention, and Prediction strategy.
+*   **Localized Soil-Context Integration:** Factoring in specific regional soil textures (e.g., Alluvial, Black, Red) to ensure chemical and organic advice is safe and effective.
+*   **Data-Driven Agricultural Intelligence:** Establishing a backend logging system (`logs.csv`) for future spatial tracking and analysis of regional disease patterns.
 
 ---
 
 ## 3. Execution (The Story-Based Technical Journey)
 
-### Stage 1: The Gatekeeper (YOLOv8 & HSV Heuristics)
+### Stage 1: The Gatekeeper (YOLOv8 Localization)
 **The Story:** Before any diagnosis happens, the image must pass the "Gatekeeper."
 1.  **YOLOv8 Localization:** The image enters a **CSPDarknet53** backbone which extracts edges and leaf patterns. A dual-branch head predicts the bounding box and calculates an **Objectness Score**. If the score is $<0.5$ (Sigmoid math: $\sigma(x) = 1/(1+e^{-x})$), the image is rejected.
-2.  **HSV Purity Check:** Simultaneously, the system converts pixels to the **HSV space** to isolate the "Green Band" (Hue 25-100). If less than **10%** of the image is green, it is flagged as a non-plant upload.
+2.  **Model Confidence Gate:** For images that pass the spatial detection check, the system evaluates the internal confidence thresholds. Images that exhibit low class-probability or high visual uncertainty are flagged as non-plant uploads.
 3.  **Adaptive ROI Cropping (The Zoom-in):** If a plant is detected, the system uses the YOLO coordinates to "zoom in" on the leaf, removing all background noise. This ensures the disease classifier only sees the leaf texture, significantly boosting accuracy.
 
 ### Stage 2: The Pathologist (MobileNetV2 & Tiered Vision)
@@ -61,7 +66,7 @@ The project is built upon four foundational technical objectives:
 Most existing agricultural applications rely on a single, isolated AI model. If the internet fluctuates or the model encounters a technical error, the entire application fails, leaving the farmer without guidance. Our proposed system introduces a **Multi-Tiered Fallback Architecture**. If the primary local model experiences an issue, the system automatically transitions to a cloud-based API, and if all APIs are unreachable, it falls back to a rule-based expert system. This ensures that the farmer receives critical diagnostic advice 100% of the time, regardless of technical outages.
 
 ### B. From Hallucinated Predictions to Intelligent Input Validation
-Standard agricultural apps often lack a "gatekeeper" and will attempt to "diagnose" a disease even if a user accidentally uploads a photo of a vehicle, a person, or a building. Our technique implements a **Dual-Gate Rejection System (YOLOv8 + HSV Color Heuristics)** supported by **Adaptive ROI Cropping**. By validating the input and then "zooming in" on the leaf, we eliminate false positives and isolate the disease symptoms from background noise, ensuring the diagnostic pipeline only runs on high-quality, relevant data.
+Standard agricultural apps often lack a "gatekeeper" and will attempt to "diagnose" a disease even if a user accidentally uploads a photo of a vehicle, a person, or a building. Our technique implements a **YOLOv8 Gatekeeper** supported by **Adaptive ROI Cropping**. By validating the input and then "zooming in" on the leaf, we eliminate false positives and isolate the disease symptoms from background noise, ensuring the diagnostic pipeline only runs on high-quality, relevant data.
 
 ### C. From Flat Image-Only Labeling to Environmental Context-Awareness
 Conventional diagnostic techniques only analyze the pixels of the captured image, completely ignoring the surrounding environmental conditions. However, plant pathology is intrinsically linked to climate. Our proposed technique performs **Environmental Fusion** by pulling real-time weather data (temperature and humidity) via the OpenWeatherMap satellite grid. This allows the AI to understand that high humidity will accelerate fungal growth, enabling it to provide a more urgent and localized "combat plan" than any image-only system could offer.
