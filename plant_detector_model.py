@@ -42,7 +42,6 @@ def load_plant_detector():
             repo_id=repo_id,
             filename=filename,
             local_dir=models_dir,
-            local_dir_use_symlinks=False,
         )
 
         _MODEL = YOLO(weights_path)

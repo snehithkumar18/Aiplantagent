@@ -794,6 +794,96 @@ def generate_rule_based_advice(disease, soil_type):
     ]
     return _format_rule_based_response(generic_summary, generic_treatments, generic_preventions, soil_type)
 
+
+def _build_soil_guidance_block(soil_type, temp=None, humidity=None):
+    """
+    Build deterministic soil-specific guidance so advice always includes actionable
+    soil-aware recommendations, even when LLM output omits soil details.
+    """
+    soil = str(soil_type or "").strip()
+    soil_key = soil.lower()
+
+    guidance_by_soil = {
+        "red soil": [
+            "Increase organic matter (compost/FYM) and split fertilizer doses to reduce nutrient loss.",
+            "Use short, frequent irrigation cycles because red soils drain quickly.",
+        ],
+        "black cotton soil": [
+            "Avoid over-irrigation; apply water only after checking topsoil moisture to prevent waterlogging.",
+            "Keep drainage channels open because heavy clay in black soil can hold excess water.",
+        ],
+        "alluvial soil": [
+            "Use split nitrogen application and add organic mulch to reduce nutrient leaching.",
+            "Maintain balanced NPK and monitor drainage after rain to avoid root stress.",
+        ],
+        "laterite soil": [
+            "Apply compost and, if pH is low, add lime as per soil test to improve nutrient availability.",
+            "Use potassium-rich fertilizer and maintain mulch to improve moisture retention.",
+        ],
+        "arid/desert soil": [
+            "Use drip irrigation and mulching to conserve moisture in fast-drying sandy profiles.",
+            "Apply organic matter regularly to improve water-holding capacity and root stability.",
+        ],
+        "mountain/forest soil": [
+            "Use contour irrigation and mulching to reduce erosion on slopes.",
+            "Prefer slow-release nutrients and organic amendments for steady root-zone nutrition.",
+        ],
+        "alkaline soil": [
+            "Use gypsum (as per soil test) and organic matter to improve structure and nutrient uptake.",
+            "Correct micronutrient lock-up with foliar zinc/iron where deficiency symptoms appear.",
+        ],
+        "peaty and marshy soil": [
+            "Use raised beds and improve drainage because peaty soils can remain overly wet.",
+            "Avoid excess irrigation; focus on root-zone aeration to reduce fungal pressure.",
+        ],
+    }
+
+    default_guidance = [
+        "Match irrigation schedule to soil moisture, not calendar days, to avoid both drought stress and waterlogging.",
+        "Use soil-test-based fertilization and add compost/FYM to stabilize nutrient availability.",
+    ]
+
+    soil_lines = guidance_by_soil.get(soil_key, default_guidance)
+
+    climate_line = None
+    if humidity is not None:
+        try:
+            if float(humidity) >= 75:
+                climate_line = "Current humidity is high; prioritize drainage, wider canopy aeration, and avoid late-evening irrigation."
+        except Exception:
+            climate_line = None
+
+    if climate_line is None and temp is not None:
+        try:
+            if float(temp) >= 33:
+                climate_line = "Current temperature is high; maintain mulch cover and irrigate during cooler hours to reduce crop stress."
+        except Exception:
+            climate_line = None
+
+    lines = [f"Soil-Specific Guidance ({soil or 'General'}):"]
+    lines.append(f"1. {soil_lines[0]}")
+    lines.append(f"2. {soil_lines[1]}")
+    if climate_line:
+        lines.append(f"3. {climate_line}")
+    return "\n".join(lines)
+
+
+def _merge_soil_guidance(advice_text, soil_type, temp=None, humidity=None):
+    """
+    Append deterministic soil guidance unless an explicit soil guidance section
+    already exists in the generated advice.
+    """
+    if not advice_text or not str(advice_text).strip():
+        return _build_soil_guidance_block(soil_type, temp=temp, humidity=humidity)
+
+    text = str(advice_text).strip()
+    low = text.lower()
+    if "soil-specific guidance" in low or "soil note:" in low:
+        return text
+
+    soil_block = _build_soil_guidance_block(soil_type, temp=temp, humidity=humidity)
+    return f"{text}\n\n{soil_block}"
+
 def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
     """
     Generate agricultural advice using GROQ (primary) or fallback.
@@ -815,6 +905,7 @@ def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
             "1) A brief encouraging summary about the healthy status.\n"
             "2) 3 short, actionable preventive measures to maintain plant health.\n"
             "3) PREDICT specific future diseases this plant is prone to based on the current weather conditions, and provide steps to prevent them.\n"
+            "4) Add a mandatory section titled 'Soil-Specific Guidance' with at least 2 concrete actions tailored to the provided soil type.\n"
             "Keep language simple and short (farmer-friendly). Output only text."
         )
     else:
@@ -826,6 +917,7 @@ def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
             "2) 3 short actionable steps for treatment (include method/product suggestion if common).\n"
             "3) 2 short preventive measures.\n"
             "4) Predict some other diseases this plant is prone to based on the given weather conditions, and provide steps to prevent them.\n"
+            "5) Add a mandatory section titled 'Soil-Specific Guidance' with at least 2 concrete actions tailored to the provided soil type.\n"
             "Keep language simple and short (farmer-friendly). Output only text."
         )
     
@@ -842,10 +934,11 @@ def generate_advice_llm(disease, confidence, temp, humidity, soil_type):
         globals()["GROQ_MODEL"] = original_model # Restore
 
     if out and out.strip() and "error" not in out.lower():
-        return out.strip()
+        return _merge_soil_guidance(out.strip(), soil_type, temp=temp, humidity=humidity)
     
     # Fallback advice when GROQ is unavailable
-    return generate_rule_based_advice(disease, soil_type)
+    fallback_text = generate_rule_based_advice(disease, soil_type)
+    return _merge_soil_guidance(fallback_text, soil_type, temp=temp, humidity=humidity)
 
 # ---------- 7) Translation helper (Google Translate primary, GROQ fallback) ----------
 def translate_text(text, target_language):
